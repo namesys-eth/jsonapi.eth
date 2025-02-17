@@ -4,3 +4,13 @@ out = "out"
 libs = ["lib"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+# Enables or disables the optimizer
+optimizer = true
+viaIR = true
+
+# The number of optimizer runs
+optimizer_runs = 666
+gas_reports = ["*"]
+
+[rpc_endpoints]
+mainnet = "https://rpc.ankr.com/eth"
