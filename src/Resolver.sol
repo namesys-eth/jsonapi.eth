@@ -81,22 +81,21 @@ contract Resolver is TickerManager {
      * @param label First label (symbol/token/address/ENS)
      * @return result Response in JSON format
      */
-    function resolve3(bytes4 _request, bytes memory label) internal view returns (bytes memory result) {
+    function resolve1(bytes calldata _request, bytes memory label) internal view returns (bytes memory result) {
         address _addr = getAddrFromLabel(label);
         if (_addr == address(0)) {
             return "Zero Address".toError();
         }
         uint256 _type = _addr.getERCType();
         if (_type == 0) {
-            //return "No ERC found".toError();
+            result = getFeaturedUser(_addr);
         } else if (_type == 20) {
-            return _addr.getInfo20().toJSON();
+            result = _addr.getInfo20();
         } else if (_type == 721) {
-            //return _addr.getInfo721().toJSON();
-        } else if (_type == 151) {
-            // ENS
-            //result =  ENS.resolveENSAddress(_addr).toJSON();
+            result = _addr.getInfo721();
         }
+
+        return "Bad Request/Zero Address".toError();
     }
     /*
     function resolve3(bytes memory label) internal view returns (bytes memory result) {

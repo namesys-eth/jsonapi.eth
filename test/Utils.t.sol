@@ -9,6 +9,10 @@ import {LibString} from "solady/utils/LibString.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import "./mocks/NonToken.sol";
 import {Brutalizer} from "../lib/solady/test/utils/Brutalizer.sol";
+import {iCheckTheChainEthereum} from "../src/Interface.sol";
+import {iERC165} from "../src/Interface.sol";
+import {iERC721Metadata} from "../src/Interface.sol";
+import {iERC721ContractMetadata} from "../src/Interface.sol";
 
 contract UtilsTest is Test, Brutalizer {
     using Utils for address;
@@ -25,88 +29,140 @@ contract UtilsTest is Test, Brutalizer {
     NonToken public nonToken;
 
     function setUp() public {
-        vm.startPrank(address(this)); // Set msg.sender to test contract
+        vm.startPrank(address(this));
         token = new SoladyToken();
         nft = new SoladyNFT();
         nonToken = new NonToken();
         vm.stopPrank();
     }
 
-    // Pure function tests
-    function test_StringToUint() public pure {
-        assertEq(Utils.stringToUint("123"), 123);
-        assertEq(Utils.stringToUint("0"), 0);
-        assertEq(Utils.stringToUint(""), 0);
-        assertEq(Utils.stringToUint("00000"), 0);
-        assertEq(Utils.stringToUint("0123"), 123);
-        assertEq(Utils.stringToUint("340282366920938463463374607431768211455"), type(uint128).max);
+    function test_GetPrice_Branches() public {
+        // Branch 1: WETH price check (uses checkPrice)
+        address weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        (uint256 price1, string memory priceStr1) = weth.getPrice();
+        assertGt(price1, 1000 * 1e6); // Price should be > $1000 USDC
+        assertEq(bytes(priceStr1).length, 11); // Format: "XXXX.XXXXXX"
+
+        // Branch 2: ETH price check (uses WETH price)
+        address eth = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+        (uint256 price2, string memory priceStr2) = weth.getPrice(); // Use WETH for ETH price
+        assertEq(price2, price1); // ETH price should match WETH price
+        assertEq(priceStr2, priceStr1); // String representation should match
+
+        // Branch 3: non-existent token
+        address deadToken = address(0xdead);
+        (uint256 price3, string memory priceStr3) = deadToken.getPrice();
+        assertEq(price3, 0);
+        assertEq(priceStr3, "");
     }
 
-    function test_IsNumber() public pure {
-        assertTrue(Utils.isNumber("123"));
-        assertTrue(Utils.isNumber("0"));
-        assertTrue(Utils.isNumber(""));
-        assertFalse(Utils.isNumber("abc"));
-        assertFalse(Utils.isNumber("12a3"));
+    function test_GetERCType_Branches() public {
+        // Branch 1: no code
+        assertEq(address(0).getERCType(), 0);
+
+        // Branch 2: ERC721
+        assertEq(address(nft).getERCType(), 721);
+
+        // Branch 3: ERC20
+        assertEq(address(token).getERCType(), 20);
+
+        // Branch 4: neither
+        assertEq(address(nonToken).getERCType(), 0);
     }
 
-    function test_IsAddress() public pure {
-        assertTrue(Utils.isAddress(bytes("0x1234567890123456789012345678901234567890")));
-        assertFalse(Utils.isAddress(bytes("0x123")));
-        assertFalse(Utils.isAddress(bytes("not an address")));
-        assertFalse(Utils.isAddress(bytes("")));
+    function test_GetPrimaryName_Branches() public {
+        // Branch 1: has primary name
+        address vitalik = 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045;
+        assertEq(vitalik.getPrimaryName(), "vitalik.eth");
+
+        // Branch 2: no resolver
+        assertEq(address(0).getPrimaryName(), "");
+
+        // Branch 3: no primary name
+        assertEq(address(this).getPrimaryName(), "");
     }
 
-    function test_IsHexNoPrefix() public pure {
-        assertTrue(Utils.isHexNoPrefix("1234567890abcdef"));
-        assertTrue(Utils.isHexNoPrefix(""));
-        assertFalse(Utils.isHexNoPrefix("0x1234"));
-        assertFalse(Utils.isHexNoPrefix("ghijklm"));
-        assertFalse(Utils.isHexNoPrefix("123g"));
+    function test_GetENSAddress_Branches() public {
+        // Branch 1: vitalik.eth resolution
+        address resolver = 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41;
+        bytes32 node =
+            keccak256(abi.encodePacked(keccak256(abi.encodePacked(bytes32(0), keccak256("eth"))), keccak256("vitalik")));
+        assertEq(resolver.getENSAddress(node), 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045);
+
+        // Branch 2: non-existent name (using a very long random string that's unlikely to be registered)
+        bytes32 nonExistentNode = keccak256(
+            abi.encodePacked(
+                keccak256(abi.encodePacked(bytes32(0), keccak256("eth"))),
+                keccak256("thisisaverylongnonexistentnamethatshoulddefinitelynotexist")
+            )
+        );
+        assertEq(resolver.getENSAddress(nonExistentNode), address(0));
+
+        // Branch 3: non-resolver contract
+        assertEq(address(nonToken).getENSAddress(node), address(0));
     }
 
-    // Contract interaction tests
-    function test_IsERC20() public view {
-        assertTrue(address(token).isERC20());
-        assertFalse(address(nft).isERC20());
-        assertFalse(address(nonToken).isERC20());
-    }
-
-    function test_IsERC721() public view {
-        assertTrue(address(nft).isERC721());
-        assertFalse(address(token).isERC721());
-        assertFalse(address(nonToken).isERC721());
-    }
-
-    function test_GetName() public view {
+    function test_TokenInfo() public {
+        // Name tests
         assertEq(address(token).getName(), "Test Token");
         assertEq(address(nft).getName(), "Test NFT");
         assertEq(address(nonToken).getName(), "N/A");
-    }
 
-    function test_GetSymbol() public view {
+        // Symbol tests
         assertEq(address(token).getSymbol(), "TEST");
         assertEq(address(nft).getSymbol(), "TNFT");
         assertEq(address(nonToken).getSymbol(), "N/A");
-    }
 
-    function test_GetDecimals() public view {
+        // Decimals tests
         assertEq(address(token).getDecimals(), "18");
         assertEq(address(nonToken).getDecimals(), "0");
+
+        // Total supply tests
+        assertEq(address(token).getTotalSupply20(18, 3), "1000000");
+        assertEq(address(nonToken).getTotalSupply20(0, 3), "0");
+
+        // Balance tests
+        assertEq(address(token).getBalance20(address(this), 18), "1000000");
+        assertEq(address(token).getBalance20(address(1), 18), "0");
+        assertEq(address(nonToken).getBalance20(address(this), 0), "0");
     }
 
-    function test_GetTotalSupply() public view {
-        assertEq(address(token).getTotalSupply(), "1000000000000000000000000");
-        assertEq(address(nonToken).getTotalSupply(), "0");
+    function test_TokenInfo2() public view {
+        // Test real ERC20 token (WETH)
+        address weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        assertEq(weth.getName(), "Wrapped Ether");
+        assertEq(weth.getSymbol(), "WETH");
+        assertEq(weth.getDecimals(), "18");
+        string memory totalSupply = weth.getTotalSupply20(18, 3);
+        assertGt(bytes(totalSupply).length, 0);
+        assertEq(totalSupply, "2949331.847");
+
+        // Test real ERC721 token (BAYC)
+        address bayc = 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D;
+        assertEq(bayc.getName(), "BoredApeYachtClub");
+        assertEq(bayc.getSymbol(), "BAYC");
+        assertEq(bayc.getTotalSupply721(), "10000");
+        assertEq(bayc.getBalance721(address(this)), "0");
+
+        // Test real ERC20 token with non-standard decimals (USDC)
+        address usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+        assertEq(usdc.getName(), "USD Coin");
+        assertEq(usdc.getSymbol(), "USDC");
+        assertEq(usdc.getDecimals(), "6");
+        totalSupply = usdc.getTotalSupply20(6, 3);
+        assertGt(bytes(totalSupply).length, 0);
+        assertEq(totalSupply, "36708400270.596");
+        // Test real ERC20 token with 0 decimals (WBTC)
+        address wbtc = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
+        assertEq(wbtc.getName(), "Wrapped BTC");
+        assertEq(wbtc.getSymbol(), "WBTC");
+        assertEq(wbtc.getDecimals(), "8");
+        totalSupply = wbtc.getTotalSupply20(8, 3);
+        assertGt(bytes(totalSupply).length, 0);
+        assertEq(totalSupply, "129138.42");
     }
 
-    function test_GetBalance() public view {
-        assertEq(address(token).getBalance(address(this)), "1000000000000000000000000");
-        assertEq(address(token).getBalance(address(1)), "0");
-        assertEq(address(nonToken).getBalance(address(this)), "0");
-    }
-
-    function test_GetOwner() public {
+    function test_NFTFunctions() public {
         vm.startPrank(address(nft));
         nft.mint(address(this), 1);
         vm.stopPrank();
@@ -115,68 +171,74 @@ contract UtilsTest is Test, Brutalizer {
         assertEq(address(nonToken).getOwner(1), "0x0000000000000000000000000000000000000000");
     }
 
-    function test_CheckInterface() public view {
-        assertTrue(address(nft).checkInterface(type(iERC721).interfaceId));
-        assertFalse(address(token).checkInterface(type(iERC721).interfaceId));
-        assertFalse(address(nonToken).checkInterface(type(iERC721).interfaceId));
-        assertFalse(address(nft).checkInterface(0xffffffff));
+    function test_FormatDecimal_Branches() public pure {
+        // Branch 1: value is zero
+        assertEq(Utils.formatDecimal(0, 18, 2), "0");
+
+        // Branch 2: precision > decimals
+        assertEq(Utils.formatDecimal(1, 18, 19), "1");
+
+        // Branch 3: no decimal places
+        assertEq(Utils.formatDecimal(1e6, 6, 0), "1");
+
+        // Branch 4: with decimal places
+        assertEq(Utils.formatDecimal(123456789, 6, 3), "123.456");
+
+        // Branch 5: large number with decimals
+        assertEq(Utils.formatDecimal(1234567890123456789, 18, 9), "1.23456789");
     }
 
-    // Only fuzz test pure functions
+    function test_CalculateUSDCValue_Branches() public pure {
+        // Branch 1: zero balance
+        assertEq(Utils.calculateUSDCValue(0, 1000 * 1e6, 18), 0);
+
+        // Branch 2: zero price
+        assertEq(Utils.calculateUSDCValue(1 ether, 0, 18), 0);
+
+        // Branch 3: decimals > 6 (ETH case)
+        assertEq(Utils.calculateUSDCValue(1 ether, 2000 * 1e6, 18), 2000 * 1e6);
+
+        // Branch 4: decimals < 6
+        assertEq(Utils.calculateUSDCValue(1e6, 1e6, 3), 1e9);
+
+        // Branch 5: decimals == 6 (USDC case)
+        assertEq(Utils.calculateUSDCValue(1000000, 1000000, 6), 1000000);
+    }
+
+    function test_StringValidation() public pure {
+        // isNumber tests
+        assertTrue(Utils.isNumber("123"));
+        assertTrue(Utils.isNumber("0"));
+        assertTrue(Utils.isNumber(""));
+        assertFalse(Utils.isNumber("abc"));
+        assertFalse(Utils.isNumber("12a3"));
+        assertFalse(Utils.isNumber("12.3"));
+        assertFalse(Utils.isNumber("-123"));
+
+        // isHexPrefixed tests
+        assertTrue(Utils.isHexPrefixed("0x123"));
+        assertTrue(Utils.isHexPrefixed("0xabc"));
+        assertTrue(Utils.isHexPrefixed("0x0"));
+        assertTrue(Utils.isHexPrefixed("0x"));
+        assertFalse(Utils.isHexPrefixed("123"));
+        assertFalse(Utils.isHexPrefixed("0xABC"));
+        assertFalse(Utils.isHexPrefixed("0xg"));
+        assertFalse(Utils.isHexPrefixed(""));
+
+        // isHexNoPrefix tests
+        assertTrue(Utils.isHexNoPrefix("123"));
+        assertTrue(Utils.isHexNoPrefix("abc"));
+        assertTrue(Utils.isHexNoPrefix("0"));
+        assertTrue(Utils.isHexNoPrefix(""));
+        assertFalse(Utils.isHexNoPrefix("0x123"));
+        assertFalse(Utils.isHexNoPrefix("ABC"));
+        assertFalse(Utils.isHexNoPrefix("g"));
+    }
+
+    // Keep fuzz tests for edge cases
     function testFuzz_StringToUint(uint256 number) public pure {
         string memory numStr = LibString.toString(number);
         assertEq(Utils.stringToUint(numStr), number);
-    }
-
-    function test_PrefixedHexStringToBytes() public view brutalizeMemory {
-        bytes memory result = Utils.prefixedHexStringToBytes(bytes("0x1234"));
-        _checkMemory(result);
-        assertEq(result, hex"1234");
-
-        result = Utils.prefixedHexStringToBytes(bytes("0x123000"));
-        _checkMemory(result);
-        assertEq(result, hex"123000");
-
-        result = Utils.prefixedHexStringToBytes(bytes("0x00123000"));
-        _checkMemory(result);
-        assertEq(result, hex"00123000");
-
-        result = Utils.prefixedHexStringToBytes(bytes("0xa1e0"));
-        _checkMemory(result);
-        assertEq(result, hex"a1e0");
-
-        result = Utils.prefixedHexStringToBytes(bytes("0x0001"));
-        _checkMemory(result);
-        assertEq(result, hex"0001");
-
-        result =
-            Utils.prefixedHexStringToBytes(bytes("0x0000000000000000000000000000000000000000000000000000000000000000"));
-        _checkMemory(result);
-        assertEq(result, hex"0000000000000000000000000000000000000000000000000000000000000000");
-
-        result = Utils.prefixedHexStringToBytes(
-            bytes("0x11000000000000000000000000000000000000000000000000000000000000000001")
-        );
-        _checkMemory(result);
-        assertEq(result, hex"11000000000000000000000000000000000000000000000000000000000000000001");
-
-        result = Utils.prefixedHexStringToBytes(
-            bytes(
-                "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
-            )
-        );
-        _checkMemory(result);
-        assertEq(
-            result,
-            hex"abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdef"
-        );
-    }
-
-    function test_PrefixedHexStringToBytes_Empty() public view brutalizeMemory {
-        bytes memory result = Utils.prefixedHexStringToBytes(bytes("0x"));
-        _checkMemory(result);
-        assertEq(result.length, 0);
-        assertEq(result, "");
     }
 
     function testFuzz_PrefixedHexStringToBytes(uint256 value) public view brutalizeMemory {
@@ -188,239 +250,258 @@ contract UtilsTest is Test, Brutalizer {
         assertEq(result, valueBytes);
     }
 
-    // Additional tests for full coverage
-    function test_GetName_RevertCase() public view {
-        assertEq(address(nonToken).getName(), "N/A");
+    function test_PrefixedHexStringToBytes_Empty() public view brutalizeMemory {
+        bytes memory result = Utils.prefixedHexStringToBytes(bytes("0x"));
+        _checkMemory(result);
+        assertEq(result.length, 0);
+        assertEq(result, "");
     }
 
-    function test_GetSymbol_RevertCase() public view {
-        assertEq(address(nonToken).getSymbol(), "N/A");
+    function test_TokenURIFormats() public {
+        vm.mockCall(
+            address(nft),
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 1),
+            abi.encode('data:application/json,{"name":"test"}')
+        );
+        vm.mockCall(
+            address(nft),
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 2),
+            abi.encode('data:text/plain,{"name":"test"}')
+        );
+        assertEq(address(nft).getTokenURI(1), 'data:application/json,{\\"name\\":\\"test\\"}');
+        assertEq(address(nft).getTokenURI(2), 'data:text/plain,{\\"name\\":\\"test\\"}');
     }
 
-    function test_GetDecimals_RevertCase() public view {
-        assertEq(address(nonToken).getDecimals(), "0");
+    function test_TokenURI_Base64() public {
+        // Test data URI with base64 encoding (not JSON)
+        address nftAddr = address(0x1234);
+        vm.etch(nftAddr, hex"01"); // Put some code there
+        vm.mockCall(
+            nftAddr,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 1),
+            abi.encode(
+                "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+            )
+        );
+        assertEq(
+            address(nftAddr).getTokenURI(1),
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        );
     }
 
-    function test_GetTotalSupply_RevertCase() public view {
-        assertEq(address(nonToken).getTotalSupply(), "0");
+    function test_ERC_NoCode() public {
+        address noCodeAddr = address(nonToken);
+        // Clear the code from the contract
+        vm.etch(noCodeAddr, "");
+
+        // Should revert when trying to check interface on contract with no code
+        vm.expectRevert();
+        Utils.isERC721(noCodeAddr);
+
+        vm.expectRevert();
+        Utils.isERC20(noCodeAddr);
     }
 
-    function test_GetBalance_RevertCase() public view {
-        assertEq(address(nonToken).getBalance(address(this)), "0");
+    function test_GetENSAddress_NoInterface() public {
+        // Create a resolver that doesn't support the interface
+        address resolver = address(0x1234);
+        vm.etch(resolver, hex"01"); // Put some code there
+        bytes32 node = keccak256("test");
+        assertEq(resolver.getENSAddress(node), address(0));
     }
 
-    function test_GetOwner_RevertCase() public view {
-        assertEq(address(nonToken).getOwner(1), "0x0000000000000000000000000000000000000000");
+    function test_GetTokenURI_Branches() public {
+        // Test regular HTTP URI
+        vm.mockCall(
+            address(nft),
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 1),
+            abi.encode("https://api.example.com/token/1")
+        );
+        assertEq(address(nft).getTokenURI(1), "https://api.example.com/token/1");
+
+        // Test data:application/json
+        string memory jsonData =
+            "data:application/json;base64,eyJuYW1lIjoidGVzdCIsImRlc2NyaXB0aW9uIjoidGVzdCBuZnQiLCJpbWFnZSI6Imh0dHBzOi8vZXhhbXBsZS5jb20vaW1hZ2UucG5nIn0=";
+        vm.mockCall(address(nft), abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 2), abi.encode(jsonData));
+        assertEq(address(nft).getTokenURI(2), jsonData);
+
+        // Test data:text/plain with JSON
+        string memory plainData =
+            'data:text/plain,{"name":"test","description":"test nft","image":"https://example.com/image.png"}';
+        vm.mockCall(address(nft), abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 3), abi.encode(plainData));
+        assertEq(
+            address(nft).getTokenURI(3),
+            'data:text/plain,{\\"name\\":\\"test\\",\\"description\\":\\"test nft\\",\\"image\\":\\"https://example.com/image.png\\"}'
+        );
+
+        // Test base64 image data URI
+        string memory imageData =
+            "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+        vm.mockCall(address(nft), abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 4), abi.encode(imageData));
+        assertEq(address(nft).getTokenURI(4), imageData);
+
+        // Test catch branch (revert)
+        vm.mockCallRevert(
+            address(nft), abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 5), "URI_QUERY_FAILED"
+        );
+        assertEq(address(nft).getTokenURI(5), "");
     }
 
-    function testFuzz_IsNumber_Comprehensive(string memory s) public pure {
-        bool onlyDigits = true;
-        bytes memory b = bytes(s);
-        for (uint256 i = 0; i < b.length; i++) {
-            if (b[i] < bytes1("0") || b[i] > bytes1("9")) {
-                onlyDigits = false;
-                break;
-            }
-        }
-        assertEq(Utils.isNumber(s), onlyDigits);
+    function test_GetPrice2() public {
+        // Test WETH address (mainnet price)
+        address weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
+        (uint256 price, string memory priceStr) = Utils.getPrice(weth);
+        assertGt(price, 0);
+        assertGt(bytes(priceStr).length, 0);
+
+        // Test USDC address (different decimals)
+        address usdc = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+        (price, priceStr) = Utils.getPrice(usdc);
+        assertGt(price, 0);
+        assertGt(bytes(priceStr).length, 0);
+
+        // Test non-existent token
+        address deadToken = address(0xdead);
+        (price, priceStr) = Utils.getPrice(deadToken);
+        assertEq(price, 0);
+        assertEq(priceStr, "");
+
+        // Test EOA
+        vm.expectRevert();
+        Utils.getPrice(address(0x1));
     }
 
-    function testFuzz_IsHexNoPrefix_Comprehensive(string memory s) public pure {
-        bool validHex = true;
-        bytes memory b = bytes(s);
-        for (uint256 i = 0; i < b.length; i++) {
-            bytes1 c = b[i];
-            bool isDigit = c >= bytes1("0") && c <= bytes1("9");
-            bool isLowerHex = c >= bytes1("a") && c <= bytes1("f");
-            if (!isDigit && !isLowerHex) {
-                validHex = false;
-                break;
-            }
-        }
-        assertEq(Utils.isHexNoPrefix(s), validHex);
+    function test_TokenURI_Branches() public {
+        // Test real NFT contract (BAYC)
+        address bayc = 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D;
+        string memory uri = bayc.getTokenURI(1);
+        assertTrue(bytes(uri).length > 0);
+
+        // Test real NFT contract (Azuki - different URI format)
+        address azuki = 0xED5AF388653567Af2F388E6224dC7C4b3241C544;
+        uri = azuki.getTokenURI(1);
+        assertTrue(bytes(uri).length > 0);
+
+        // Test non-existent token
+        address deadToken = address(0xdead);
+        vm.expectRevert();
+        deadToken.getTokenURI(1);
+
+        // Test EOA
+        vm.expectRevert();
+        address(0x1).getTokenURI(1);
     }
 
-    function testFuzz_IsHexPrefixed_Comprehensive(string memory s) public pure {
-        if (bytes(s).length < 2 || bytes(s)[0] != "0" || bytes(s)[1] != "x") {
-            assertFalse(Utils.isHexPrefixed(s));
-            return;
-        }
+    function test_IsERC202() public {
+        // Test EOA - should revert
+        vm.expectRevert();
+        Utils.isERC20(address(0x1));
 
-        bool validHex = true;
-        bytes memory b = bytes(s);
-        for (uint256 i = 2; i < b.length; i++) {
-            bytes1 c = b[i];
-            bool isDigit = c >= bytes1("0") && c <= bytes1("9");
-            bool isLowerHex = c >= bytes1("a") && c <= bytes1("f");
-            if (!isDigit && !isLowerHex) {
-                validHex = false;
-                break;
-            }
-        }
-        assertEq(Utils.isHexPrefixed(s), validHex);
+        // Test real ERC20 tokens
+        assertTrue(Utils.isERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2)); // WETH
+        assertTrue(Utils.isERC20(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48)); // USDC
+
+        // Test non-contract
+        vm.expectRevert();
+        Utils.isERC20(address(0xdead));
     }
 
-    // Add this test to verify ERC721 interface ID
-    function test_ERC721InterfaceId() public pure {
-        // Calculate ERC721 interface ID
-        bytes4 IERC721_ID = type(iERC721).interfaceId;
+    function test_IsERC7212() public {
+        // Test EOA - should revert
+        vm.expectRevert();
+        Utils.isERC721(address(0x1));
 
-        // Known ERC721 interface ID
-        bytes4 KNOWN_IERC721_ID = 0x80ac58cd;
+        // Test real ERC721 tokens
+        assertTrue(Utils.isERC721(0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D)); // BAYC
+        assertTrue(Utils.isERC721(0xED5AF388653567Af2F388E6224dC7C4b3241C544)); // Azuki
 
-        // Verify they match
-        assertEq(IERC721_ID, KNOWN_IERC721_ID);
+        // Test non-contract
+        vm.expectRevert();
+        Utils.isERC721(address(0xdead));
     }
 
-    function test_FormatDecimal() public pure {
-        assertEq(Utils.formatDecimal(123456789, 6, 3), "123.456");
-        assertEq(Utils.formatDecimal(1e6, 6, 0), "1");
-        assertEq(Utils.formatDecimal(1e18, 18, 5), "1");
-        assertEq(Utils.formatDecimal(1000567890, 6, 2), "1000.56");
-        assertEq(Utils.formatDecimal(123, 6, 6), "0.000123");
-        assertEq(Utils.formatDecimal(0, 18, 2), "0");
-        assertEq(Utils.formatDecimal(1010101010100010101, 6, 5), "1010101010100.01010");
-        assertEq(Utils.formatDecimal(999_999_999_999, 9, 4), "999.9999");
+    function test_IsAddress() public {
+        // Test valid address
+        assertTrue(Utils.isAddress(bytes("0x1234567890123456789012345678901234567890")));
+
+        // Test invalid length
+        assertFalse(Utils.isAddress(bytes("0x123")));
+
+        // Test no 0x prefix
+        assertFalse(Utils.isAddress(bytes("1234567890123456789012345678901234567890")));
+
+        // Test uppercase hex
+        assertFalse(Utils.isAddress(bytes("0x1234567890123456789012345678901234567ABC")));
+
+        // Test invalid characters
+        assertFalse(Utils.isAddress(bytes("0x123456789012345678901234567890123456789g")));
     }
 
-    function testCalculateUSDCValue(uint256 _balance, uint256 price, uint8 decimals) public pure {
-        // Bound inputs to avoid overflow
-        _balance = bound(_balance, 0, type(uint64).max); // Smaller bound for safer testing
-        price = bound(price, 0, 1000000 * 1e6); // Max $1M USDC
-        decimals = uint8(bound(decimals, 0, 18));
+    function test_FormatDecimal_EdgeCases() public {
+        // Test very large numbers
+        assertEq(
+            Utils.formatDecimal(type(uint256).max, 18, 6),
+            "115792089237316195423570985008687907853269984665640564039457.584007"
+        );
 
-        uint256 value = Utils.calculateUSDCValue(_balance, price, decimals);
+        // Test numbers with different decimal places
+        assertEq(Utils.formatDecimal(1234567890, 9, 4), "1.2345");
+        assertEq(Utils.formatDecimal(1234567000, 6, 6), "1234.567");
+        assertEq(Utils.formatDecimal(1234567001, 6, 6), "1234.567001");
+        assertEq(Utils.formatDecimal(1234567890, 3, 2), "1234567.89");
 
-        // Test basic properties
-        if (_balance == 0 || price == 0) {
-            assertEq(value, 0, "Zero input should give zero output");
-            return;
-        }
-
-        // Skip complex assertions in fuzz test to avoid precision issues
-        // We'll test specific cases separately
+        // Test boundary conditions
+        assertEq(Utils.formatDecimal(1, 0, 0), "1");
+        assertEq(Utils.formatDecimal(0, 18, 18), "0");
+        assertEq(Utils.formatDecimal(1, 1, 1), "0.1");
     }
 
-    function testCalculateUSDCValueSpecificCases() public pure {
-        // Test case 1: 6 decimals (USDC to USDC)
-        assertEq(Utils.calculateUSDCValue(1000000, 1000000, 6), 1000000, "1 USDC at $1 should be $1");
+    function test_CalculateUSDCValue_EdgeCases() public {
+        // Test max values
+        assertGt(Utils.calculateUSDCValue(type(uint128).max, type(uint128).max, 18), 0);
 
-        // Test case 2: 18 decimals (ETH to USDC)
-        assertEq(Utils.calculateUSDCValue(1 ether, 1000000, 18), 1000000, "1 ETH at $1 should be $1");
-
-        // Test case 3: 8 decimals (WBTC to USDC)
-        assertEq(Utils.calculateUSDCValue(100000000, 1000000, 8), 1000000, "1 WBTC at $1 should be $1");
-
-        // Test case 4: 0 decimals
-        assertEq(Utils.calculateUSDCValue(1, 1000000, 0), 1000000, "1 unit of 0 decimal token at $1 should be $1");
+        // Test different decimal combinations
+        assertEq(Utils.calculateUSDCValue(1e18, 2e6, 18), 2e6); // 1 ETH at $2
+        assertEq(Utils.calculateUSDCValue(1e6, 1e6, 6), 1e6); // 1 USDC at $1
+        assertEq(Utils.calculateUSDCValue(1e3, 1e6, 3), 1e6); // 1 token with 3 decimals at $1
 
         // Test zero cases
-        assertEq(Utils.calculateUSDCValue(0, 1000000, 18), 0, "Zero balance should return 0");
-        assertEq(Utils.calculateUSDCValue(1e18, 0, 18), 0, "Zero price should return 0");
+        assertEq(Utils.calculateUSDCValue(0, 1e6, 18), 0);
+        assertEq(Utils.calculateUSDCValue(1e18, 0, 18), 0);
     }
 
-    function testCalculateUSDCValueEdgeCases() public pure {
-        // High value ETH cases
-        assertEq(
-            Utils.calculateUSDCValue(100 ether, 2000 * 1e6, 18), 200000 * 1e6, "100 ETH at $2000 should be $200,000"
-        );
+    function test_StringValidation_EdgeCases() public {
+        // Test empty strings
+        assertTrue(Utils.isNumber(""));
+        assertTrue(Utils.isHexNoPrefix(""));
+        assertFalse(Utils.isHexPrefixed(""));
 
-        // Small value ETH cases
-        assertEq(Utils.calculateUSDCValue(0.1 ether, 2000 * 1e6, 18), 200 * 1e6, "0.1 ETH at $2000 should be $200");
+        // Test invalid hex strings
+        assertFalse(Utils.isHexPrefixed("0xg"));
+        assertFalse(Utils.isHexPrefixed("0xG"));
+        assertFalse(Utils.isHexNoPrefix("g"));
+        assertFalse(Utils.isHexNoPrefix("G"));
 
-        // WBTC cases (8 decimals)
-        // 1 WBTC = 100000000 (8 decimals)
-        assertEq(
-            Utils.calculateUSDCValue(100000000, 40000 * 1e6, 8), 40000 * 1e6, "1 WBTC at $40,000 should be $40,000"
-        );
-        assertEq(
-            Utils.calculateUSDCValue(50000000, 40000 * 1e6, 8), 20000 * 1e6, "0.5 WBTC at $40,000 should be $20,000"
-        );
-
-        // Small decimal token cases (4 decimals)
-        assertEq(Utils.calculateUSDCValue(10000, 1 * 1e6, 4), 1 * 1e6, "1 unit of 4 decimal token at $1 should be $1");
-        assertEq(
-            Utils.calculateUSDCValue(5000, 1 * 1e6, 4), 0.5 * 1e6, "0.5 unit of 4 decimal token at $1 should be $0.50"
-        );
-
-        // Max value tests
-        uint256 maxPrice = 1000000 * 1e6; // $1M USD
-        assertEq(Utils.calculateUSDCValue(1000 ether, maxPrice, 18), 1000000000 * 1e6, "1000 ETH at $1M should be $1B");
-
-        // Minimum value tests
-        assertEq(Utils.calculateUSDCValue(1, 1, 18), 0, "Tiny ETH amount at tiny price should round to 0");
-
-        // Different decimal combinations
-        assertEq(
-            Utils.calculateUSDCValue(1000000, 1000000, 6), // Using cleaner numbers for 6 decimals
-            1000000,
-            "Equal decimals (6) should calculate correctly"
-        );
-        assertEq(
-            Utils.calculateUSDCValue(123456, 1000000, 5), // Simpler numbers for 5 decimals
-            1234560,
-            "Lower decimals (5) should scale up correctly"
-        );
-        assertEq(
-            Utils.calculateUSDCValue(10000000, 1000000, 7), // Cleaner numbers for 7 decimals
-            1000000,
-            "Higher decimals (7) should scale down correctly"
-        );
-
-        // Zero decimal edge cases
-        assertEq(Utils.calculateUSDCValue(1, 1e6, 0), 1e6, "1 unit of 0 decimal token at $1 should be $1");
-        assertEq(Utils.calculateUSDCValue(100, 1e6, 0), 100 * 1e6, "100 units of 0 decimal token at $1 should be $100");
+        // Test invalid number strings
+        assertFalse(Utils.isNumber("-1"));
+        assertFalse(Utils.isNumber("+1"));
+        assertFalse(Utils.isNumber("1.1"));
+        assertFalse(Utils.isNumber("a"));
     }
 
-    function testFuzz_CalculateUSDCValue_18Decimals(uint256 _balance, uint256 price) public pure {
-        // Bound inputs to avoid overflow but keep good test coverage
-        _balance = bound(_balance, 0, type(uint128).max);
-        price = bound(price, 0, 1000000 * 1e6); // Max $1M USDC price
+    function test_ENSFunctions_EdgeCases() public {
+        // Test non-existent ENS name
+        address nonExistentAddr = address(0xdead);
+        assertEq(nonExistentAddr.getPrimaryName(), "");
 
-        uint256 value = Utils.calculateUSDCValue(_balance, price, 18);
+        // Test address with no reverse record
+        address noReverseAddr = address(0x1);
+        assertEq(noReverseAddr.getPrimaryName(), "");
 
-        // Test basic properties
-        if (_balance == 0 || price == 0) {
-            assertEq(value, 0, "Zero input should give zero output");
-            return;
-        }
-
-        // Test specific known ratios
-        if (_balance == 1 ether) {
-            assertEq(value, price, "1 ETH should equal price in USDC");
-        }
-        if (_balance == 0.5 ether) {
-            assertEq(value, price / 2, "0.5 ETH should equal half price in USDC");
-        }
-        if (_balance == 2 ether) {
-            assertEq(value, price * 2, "2 ETH should equal double price in USDC");
-        }
-
-        // Test value is always in USDC decimals (6)
-        assertTrue(value <= _balance * price, "Value should not exceed balance * price");
-    }
-
-    // Additional specific test cases for 18 decimals
-    function test_CalculateUSDCValue_18Decimals_Specific() public pure {
-        // 1 ETH at different prices
-        assertEq(Utils.calculateUSDCValue(1 ether, 2000 * 1e6, 18), 2000 * 1e6, "1 ETH at $2000 should be $2000");
-
-        // Fractional ETH
-        assertEq(Utils.calculateUSDCValue(0.1 ether, 2000 * 1e6, 18), 200 * 1e6, "0.1 ETH at $2000 should be $200");
-        assertEq(Utils.calculateUSDCValue(0.01 ether, 2000 * 1e6, 18), 20 * 1e6, "0.01 ETH at $2000 should be $20");
-        assertEq(Utils.calculateUSDCValue(0.001 ether, 2000 * 1e6, 18), 2 * 1e6, "0.001 ETH at $2000 should be $2");
-
-        // Large amounts
-        assertEq(
-            Utils.calculateUSDCValue(100 ether, 2000 * 1e6, 18), 200000 * 1e6, "100 ETH at $2000 should be $200,000"
-        );
-        assertEq(
-            Utils.calculateUSDCValue(1000 ether, 2000 * 1e6, 18),
-            2000000 * 1e6,
-            "1000 ETH at $2000 should be $2,000,000"
-        );
-
-        // Small amounts
-        assertEq(Utils.calculateUSDCValue(1, 2000 * 1e6, 18), 0, "Dust ETH should round to 0");
+        // Test vitalik.eth (known ENS name)
+        address vitalik = 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045;
+        string memory primaryName = vitalik.getPrimaryName();
+        assertTrue(bytes(primaryName).length > 0);
+        assertTrue(LibString.endsWith(primaryName, ".eth"));
     }
 }

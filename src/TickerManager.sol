@@ -4,6 +4,7 @@ pragma solidity ^0.8.0;
 import "./Interface.sol";
 import "./ERC165.sol";
 import "./Utils.sol";
+import "./LibJSON.sol";
 import "solady/utils/LibString.sol";
 import "solady/utils/LibBytes.sol";
 
@@ -17,6 +18,7 @@ contract TickerManager is ERC165 {
     using Utils for *;
     using LibString for *;
     using LibBytes for bytes;
+    using LibJSON for *;
 
     /**
      * @notice Ticker registration structure
@@ -204,7 +206,6 @@ contract TickerManager is ERC165 {
     function setFeaturedBatch(bytes32[] calldata nodes) external onlyOwner {
         for (uint256 i = 0; i < nodes.length; i++) {
             bytes32 node = nodes[i];
-
             Ticker storage ticker = Tickers[node];
             require(ticker._addr != address(0), TickerNotFound(node));
             require(ticker._featured == 0, DuplicateTicker(node));
@@ -308,103 +309,37 @@ contract TickerManager is ERC165 {
         return Featured;
     }
 
-    function getFeaturedBalance(address _owner) public view returns (bytes memory) {
-        //bytes memory _featured = abi.encodePacked('"featured":["');
-        bytes memory featured20 = getETHFeatured(_owner);
-        bytes memory featured721 = abi.encodePacked('"ENS":{"balance":"', '0 ETH","price":"0 USDC","value":"0 USDC"}');
+    function getFeaturedUser(address _owner) public view returns (bytes memory) {
+        bytes memory featured20 = LibJSON.getETHFeatured(_owner);
+        bytes memory featured721 = LibJSON.getENSFeatured(_owner);
         uint256 len = Featured.length;
+        Ticker memory ticker;
+        uint256 _bal;
+        uint256 _erc;
         for (uint256 i = 1; i < len; i++) {
-            Ticker memory ticker = Tickers[Featured[i]];
-            uint256 _bal = iERC20(ticker._addr).balanceOf(_owner);
+            // skip 0 index (ETH)
+            ticker = Tickers[Featured[i]];
+            _bal = iERC20(ticker._addr).balanceOf(_owner);
             if (_bal > 0) {
-                uint256 _erc = ticker._erc;
+                _erc = ticker._erc;
                 if (_erc == 20) {
-                    featured20 = getFeatured20(ticker._decimals, ticker._addr, _bal, ticker._symbol).concat(featured20);
+                    featured20 =
+                        LibJSON.getFeatured20(ticker._decimals, ticker._addr, _bal, ticker._symbol).concat(featured20);
                 } else if (_erc == 721) {
-                    featured721 = abi.encodePacked(featured721, LibString.toHexStringChecksummed(ticker._addr), '","');
+                    featured721 = LibJSON.getFeatured721(ticker._addr, _bal, ticker._symbol).concat(featured721);
                 }
             }
         }
-        return abi.encodePacked('"ERC20":{"', featured20, '"},"ERC721":{"', featured721, '"}');
-    }
-
-    function getETHFeatured(address _owner) public view returns (bytes memory _featured) {
-        uint256 _bal = _owner.balance;
-        (uint256 _price,) = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2).getPrice(); // WETH price
-        _featured = abi.encodePacked(
-            '"ETH":{"_balance":"',
-            _bal.toString(),
-            '","balance":"',
-            _bal.formatDecimal(18, 6),
-            '","contract":"","decimals":"18","price":"',
-            _price.formatDecimal(6, 3),
-            '","symbol":"ETH","totalsupply":"","value":"',
-            _bal.calculateUSDCValue(_price, 18).formatDecimal(6, 3),
-            '"}'
-        );
-    }
-
-    function getENSFeatured(address _owner) public view returns (bytes memory _featured) {
-        uint256 _bal; // = ENS721.balanceOf(_owner);
-        _featured = abi.encodePacked(
-            '"ENS":{"balance":"',
-            _bal.toString(),
-            '","contract":"',
+        return abi.encodePacked(
+            '{"address":"',
             _owner.toHexStringChecksummed(),
-            '","primary":"',
+            '","name":"',
             _owner.getPrimaryName(),
-            '"}'
-        );
-    }
-
-    function getFeatured721(address _token, uint256 _balance, string memory _symbol)
-        internal
-        view
-        returns (bytes memory _featured)
-    {
-        _featured = abi.encodePacked(
-            '"',
-            _symbol,
-            '":{"balance":"',
-            _balance.toString(),
-            '","contract":"',
-            _token.toHexStringChecksummed(),
-            '","symbol":"',
-            _symbol,
-            '","supply":"',
-            _token.getTotalSupply(),
-            '","metadata":"',
-            _token.getContractURI(),
-            '"},'
-        );
-    }
-
-    function getFeatured20(uint8 _decimals, address _token, uint256 _balance, string memory _symbol)
-        internal
-        view
-        returns (bytes memory _featured)
-    {
-        (uint256 _price,) = address(_token).getPrice();
-        _featured = abi.encodePacked(
-            '"',
-            _symbol,
-            '":{"_balance":"',
-            _balance.toString(),
-            '","balance":"',
-            _balance.formatDecimal(_decimals, 6),
-            '","contract":"',
-            _token.toHexStringChecksummed(),
-            '","decimals":"',
-            _decimals.toString(),
-            '","price":"',
-            _price.formatDecimal(6, 3),
-            '","supply":"',
-            iERC20(_token).totalSupply().formatDecimal(_decimals, 3),
-            '","symbol":"',
-            _symbol,
-            '","value":"',
-            _balance.calculateUSDCValue(_price, _decimals).formatDecimal(6, 3),
-            '"},' // appending extra "," here
+            '","erc20":{',
+            featured20,
+            '},"erc721":{',
+            featured721,
+            "}}"
         );
     }
 }

@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import {ERC721} from "solady/tokens/ERC721.sol";
 import "../../src/Interface.sol";
 
-contract SoladyNFT is ERC721 {
+contract SoladyNFT is ERC721, iERC721ContractMetadata {
     string private _name;
     string private _symbol;
 
@@ -25,8 +25,12 @@ contract SoladyNFT is ERC721 {
         return "test";
     }
 
+    function contractURI() public pure override returns (string memory) {
+        return "test";
+    }
+
     function supportsInterface(bytes4 interfaceId) public pure override returns (bool) {
-        return interfaceId == type(iERC721).interfaceId;
+        return interfaceId == type(iERC721).interfaceId || interfaceId == type(iERC721ContractMetadata).interfaceId;
     }
 
     function mint(address to, uint256 tokenId) public {

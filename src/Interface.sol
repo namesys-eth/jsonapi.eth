@@ -28,6 +28,12 @@ interface iENSIP10 {
 interface iResolver {
     function addr(bytes32 node) external view returns (address payable);
     function name(bytes32 node) external view returns (string memory);
+    function contenthash(bytes32 node) external view returns (bytes memory);
+    function text(bytes32 node, string calldata key) external view returns (string memory);
+}
+
+interface iOverloadedResolver {
+    function addr(bytes32 node, uint256 chainId) external view returns (bytes memory);
 }
 
 interface iERC20 {
