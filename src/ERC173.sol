@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: WTFPL.ETH
 pragma solidity ^0.8.25;
 
-import {iERC173} from "./Interface.sol";
+import {iERC173} from "./interfaces/IERC.sol";
 
 abstract contract ERC173 is iERC173 {
     address public owner;

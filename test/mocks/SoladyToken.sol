@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ERC20} from "solady/tokens/ERC20.sol";
-import "../../src/Interface.sol";
+import {iERC20} from "../../src/interfaces/IERC.sol";
 
 contract SoladyToken is ERC20 {
     string private _name;

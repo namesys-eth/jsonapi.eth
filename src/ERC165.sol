@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: WTFPL.ETH
 pragma solidity ^0.8.0;
 
-import {iERC165, iERC173} from "./Interface.sol";
+import {iERC165, iERC173} from "./interfaces/IERC.sol";
 import {ERC173} from "./ERC173.sol";
 
 abstract contract ERC165 is iERC165, ERC173 {
@@ -15,10 +15,11 @@ abstract contract ERC165 is iERC165, ERC173 {
         supportsInterface[iERC173.transferOwnership.selector] = true;
     }
 
-    //error BadInterface();
+    /// @notice Thrown when attempting to set invalid interface ID
+    error BadInterface();
 
     function setInterface(bytes4 _sig, bool _set) external onlyOwner {
-        //require(_sig != 0xffffffff, BadInterface());
+        if (_sig == 0xffffffff) revert BadInterface();
         supportsInterface[_sig] = _set;
         emit InterfaceUpdated(_sig, _set);
     }

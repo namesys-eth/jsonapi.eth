@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: WTFPL.ETH
 pragma solidity ^0.8.0;
 
-import "./Interface.sol";
+import {iERC20, iERC721, iERC165} from "./interfaces/IERC.sol";
+import {iENS} from "./interfaces/IENS.sol";
 import "./ERC165.sol";
 import "./Utils.sol";
 import "./LibJSON.sol";
@@ -41,40 +42,10 @@ contract TickerManager is ERC165 {
      * @dev Initializes ETH as the first featured token at index 0
      */
     constructor() {
+        // Initialize ETH as the first featured token
         bytes32 hash = keccak256(abi.encodePacked(JSONAPIRoot, keccak256("eth")));
         Featured.push(hash);
         Tickers[hash] = Ticker(0, 20, address(0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE), "Ethereum", "ETH", 18);
-        /*
-        hash = keccak256(abi.encodePacked(JSONAPIRoot, keccak256("usdc")));
-        Featured.push(hash);
-        Tickers[hash] = Ticker(
-            0,
-            20,
-            address(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48),
-            "USD Coin",
-            "USDC",
-            6
-        );
-        hash = keccak256(abi.encodePacked(JSONAPIRoot, keccak256("weth")));
-        Featured.push(hash);
-        Tickers[hash] = Ticker(
-            0,
-            20,
-            address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2),
-            "Wrapped Ether",
-            "WETH",
-            18
-        );
-        hash = keccak256(abi.encodePacked(JSONAPIRoot, keccak256("usdt")));
-        Featured.push(hash);
-        Tickers[hash] = Ticker(
-            0,
-            20,
-            address(0xdAC17F958D2ee523a2206206994597C13D831ec7),
-            "Tether",
-            "USDT",
-            6
-        );*/
     }
 
     /**
@@ -157,6 +128,10 @@ contract TickerManager is ERC165 {
      * @notice Thrown when attempting to operate on a non-token contract
      */
     error NotTokenContract();
+    /**
+     * @notice Thrown when input validation fails
+     */
+    error InvalidInput();
 
     /**
      * @notice Register or update a token ticker
@@ -166,11 +141,12 @@ contract TickerManager is ERC165 {
      * @param ticker Human-readable ticker symbol (e.g., "DAI")
      */
     function setTicker(bool featured, address addr, string calldata ticker) external onlyOwner {
-        require(addr.code.length > 0, NotTokenContract());
+        if (addr == address(0) || bytes(ticker).length == 0) revert InvalidInput();
+        if (addr.code.length == 0) revert NotTokenContract();
         uint16 erc = uint16(addr.getERCType());
-        require(erc != 0, NotTokenContract());
+        if (erc == 0) revert NotTokenContract();
         bytes32 node = keccak256(abi.encodePacked(JSONAPIRoot, keccak256(bytes(ticker))));
-        require(Tickers[node]._addr == address(0), DuplicateTicker(node));
+        if (Tickers[node]._addr != address(0)) revert DuplicateTicker(node);
 
         uint8 fid;
         if (featured) {
@@ -185,13 +161,20 @@ contract TickerManager is ERC165 {
     }
 
     function setTickerBatch(address[] calldata addrs, string[] calldata tickers) external onlyOwner {
-        for (uint256 i = 0; i < addrs.length; i++) {
+        uint256 len = addrs.length;
+        if (len == 0 || len != tickers.length) revert InvalidInput();
+
+        for (uint256 i = 0; i < len; i++) {
             address addr = addrs[i];
+            if (addr == address(0)) revert InvalidInput();
             string memory ticker = tickers[i];
+            if (bytes(ticker).length == 0) revert InvalidInput();
+
             uint16 erc = uint16(addr.getERCType());
-            require(erc != 0, NotTokenContract());
+            if (erc == 0) revert NotTokenContract();
             bytes32 node = keccak256(abi.encodePacked(JSONAPIRoot, keccak256(bytes(ticker))));
-            require(Tickers[node]._addr == address(0), DuplicateTicker(node));
+            if (Tickers[node]._addr != address(0)) revert DuplicateTicker(node);
+
             Tickers[node] =
                 Ticker(0, erc, addr, addr.getName(), addr.getSymbol(), erc == 20 ? iERC20(addr).decimals() : 0);
             emit TickerAdded(ticker, addr, node);
@@ -204,13 +187,17 @@ contract TickerManager is ERC165 {
      * @param nodes Array of ticker node hashes to feature
      */
     function setFeaturedBatch(bytes32[] calldata nodes) external onlyOwner {
-        for (uint256 i = 0; i < nodes.length; i++) {
+        uint256 len = nodes.length;
+        if (len == 0) revert InvalidInput();
+        if (Featured.length + len > MAX_FEATURED) revert FeaturedCapacityExceeded();
+
+        for (uint256 i = 0; i < len; i++) {
             bytes32 node = nodes[i];
             Ticker storage ticker = Tickers[node];
-            require(ticker._addr != address(0), TickerNotFound(node));
-            require(ticker._featured == 0, DuplicateTicker(node));
+            if (ticker._addr == address(0)) revert TickerNotFound(node);
+            if (ticker._featured != 0) revert DuplicateTicker(node);
+
             uint256 fid = Featured.length;
-            require(fid < MAX_FEATURED, FeaturedCapacityExceeded());
             ticker._featured = uint8(fid);
             Featured.push(node);
             emit TokenFeatured(node, true);
@@ -224,7 +211,8 @@ contract TickerManager is ERC165 {
      */
     function removeTicker(bytes32 node) external onlyOwner {
         Ticker memory ticker = Tickers[node];
-        require(ticker._addr != address(0), TickerNotFound(node));
+        if (ticker._addr == address(0)) revert TickerNotFound(node);
+
         if (ticker._featured > 0) {
             bytes32 lastNode = Featured[Featured.length - 1];
             Ticker storage lastTicker = Tickers[lastNode];
@@ -248,8 +236,6 @@ contract TickerManager is ERC165 {
     function setFeatured(bytes32 node) external onlyOwner {
         Ticker storage ticker = Tickers[node];
         if (ticker._addr == address(0)) revert TickerNotFound(node);
-
-        // Check if ticker is already in Featured array
         if (ticker._featured > 0) revert DuplicateTicker(node);
 
         uint256 fid = Featured.length;
@@ -267,7 +253,7 @@ contract TickerManager is ERC165 {
      */
     function removeFeatured(bytes32 node) external onlyOwner {
         uint8 fid = Tickers[node]._featured;
-        require(fid > 0, InvalidFeaturedIndex());
+        if (fid == 0) revert InvalidFeaturedIndex();
 
         uint256 lastIndex = Featured.length - 1;
         bytes32 lastNode = Featured[lastIndex];
@@ -291,8 +277,7 @@ contract TickerManager is ERC165 {
      * @param data ABI-encoded metadata parameters
      */
     function setCache(bytes32 node, bytes calldata data) external onlyOwner {
-        Ticker memory _ticker = Tickers[node];
-        require(_ticker._addr != address(0), TickerNotFound(node));
+        if (Tickers[node]._addr == address(0)) revert TickerNotFound(node);
         TokenInfo[node] = data;
         emit CacheUpdated(node);
     }
@@ -310,26 +295,38 @@ contract TickerManager is ERC165 {
     }
 
     function getFeaturedUser(address _owner) public view returns (bytes memory) {
+        if (_owner == address(0)) revert InvalidInput();
+
+        // Pre-allocate memory for featured token data
         bytes memory featured20 = LibJSON.getETHFeatured(_owner);
         bytes memory featured721 = LibJSON.getENSFeatured(_owner);
+
+        // Cache array length to save gas
         uint256 len = Featured.length;
-        Ticker memory ticker;
-        uint256 _bal;
-        uint256 _erc;
-        for (uint256 i = 1; i < len; i++) {
-            // skip 0 index (ETH)
-            ticker = Tickers[Featured[i]];
-            _bal = iERC20(ticker._addr).balanceOf(_owner);
-            if (_bal > 0) {
-                _erc = ticker._erc;
-                if (_erc == 20) {
-                    featured20 =
-                        LibJSON.getFeatured20(ticker._decimals, ticker._addr, _bal, ticker._symbol).concat(featured20);
-                } else if (_erc == 721) {
-                    featured721 = LibJSON.getFeatured721(ticker._addr, _bal, ticker._symbol).concat(featured721);
+
+        // Skip index 0 (ETH) and process remaining featured tokens
+        for (uint256 i = 1; i < len;) {
+            Ticker memory ticker = Tickers[Featured[i]];
+            uint256 balance = iERC20(ticker._addr).balanceOf(_owner);
+
+            // Only process tokens with non-zero balance
+            if (balance > 0) {
+                if (ticker._erc == 20) {
+                    featured20 = LibJSON.getFeatured20(ticker._decimals, ticker._addr, balance, ticker._symbol).concat(
+                        featured20
+                    );
+                } else if (ticker._erc == 721) {
+                    featured721 = LibJSON.getFeatured721(ticker._addr, balance, ticker._symbol).concat(featured721);
                 }
             }
+
+            // Gas-efficient increment
+            unchecked {
+                ++i;
+            }
         }
+
+        // Construct final JSON response
         return abi.encodePacked(
             '{"address":"',
             _owner.toHexStringChecksummed(),

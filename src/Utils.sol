@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: WTFPL.ETH
 pragma solidity ^0.8.0;
 
-import "./Interface.sol";
+import {iERC20, iERC721, iERC721Metadata, iERC165} from "./interfaces/IERC.sol";
+import {iENS, iENSReverse, iResolver} from "./interfaces/IENS.sol";
+import {iCheckTheChainEthereum} from "./interfaces/ICheckTheChain.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibJSON} from "./LibJSON.sol";
@@ -24,6 +26,10 @@ library Utils {
 
     error NotANumber();
     error OddHexLength();
+    error InvalidDecimals();
+    error ContractNotFound();
+    error NotERC721Metadata();
+    error InvalidInput();
 
     /**
      * @notice Convert hex string to bytes
@@ -32,9 +38,11 @@ library Utils {
      * @dev Input must be even length, lowercase (0-9,a-f)
      */
     function prefixedHexStringToBytes(bytes memory input) internal pure returns (bytes memory result) {
+        if (input.length < 2) revert InvalidInput();
+        if (!isHexPrefixed(string(input))) revert InvalidInput();
+
         /// @solidity memory-safe-assembly
         assembly {
-            //let len := mload(input)
             let outLen := shr(1, sub(mload(input), 2)) // (len - 2) / 2
 
             result := add(mload(0x40), 0x20)
@@ -65,6 +73,7 @@ library Utils {
      * @return result Parsed number
      */
     function stringToUint(string memory s) internal pure returns (uint256 result) {
+        if (!isNumber(s)) revert NotANumber();
         /// @solidity memory-safe-assembly
         assembly {
             let end := add(mload(s), add(s, 0x20)) // combine length calc with ptr
@@ -218,37 +227,27 @@ library Utils {
      */
     function getTokenURI(address _contract, uint256 _tokenId) internal view returns (string memory) {
         try iERC721Metadata(_contract).tokenURI(_tokenId) returns (string memory tokenURI) {
+            if (bytes(tokenURI).length == 0) return "";
             if (tokenURI.startsWith("data:")) {
                 if (tokenURI.startsWith("data:application/json,")) {
                     return tokenURI.escapeJSON();
-                } else if (tokenURI.startsWith("data:text/plain,{")) {
-                    // some old NFTs return plain text data URI
+                } else if (tokenURI.startsWith("data:text/plain,")) {
                     return tokenURI.escapeJSON();
                 }
-                // assume data uri is base64 encoded
+                // Return as-is for other data URIs (e.g. base64)
+                return tokenURI;
             }
-            // ?? remove?
-            else if (tokenURI.contains('"')) {
+
+            // Handle URIs with quotes that need escaping
+            if (tokenURI.contains('"')) {
                 return tokenURI.escapeHTML();
             }
+
             return tokenURI;
         } catch {
             return "";
         }
     }
-
-    /*function getContractURI(address _contract) internal view returns (string memory) {
-        try iERC721ContractMetadata(_contract).contractURI() returns (string memory contractURI) {
-            if (contractURI.startsWith("data:application/json")) {
-                return contractURI.escapeJSON();
-            } else if (contractURI.contains('"')) {
-                return contractURI.escapeHTML();
-            }
-            return contractURI;
-        } catch {
-            return "";
-        }
-    }*/
 
     iENSReverse internal constant ENSReverse = iENSReverse(0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb);
 
@@ -258,12 +257,12 @@ library Utils {
      * @return _name Primary ENS name
      */
     function getPrimaryName(address _addr) internal view returns (string memory _name) {
+        if (_addr == address(0)) return "";
         bytes32 revNode = ENSReverse.node(_addr);
         address reverseResolver = ENS.resolver(revNode);
         if (reverseResolver != address(0)) {
-            // no interface check in reverse it reverts
             try iResolver(reverseResolver).name(revNode) returns (string memory name) {
-                return name; // domain.eth
+                return name;
             } catch {}
         }
     }
@@ -273,8 +272,7 @@ library Utils {
      * @param addr Contract address
      * @return True if ERC721
      */
-    function isERC721(address addr) internal view returns (bool) {
-        //if (addr.code.length == 0) return false;
+    function isERC721(address addr) private view returns (bool) {
         try iERC165(addr).supportsInterface(type(iERC721).interfaceId) returns (bool supported) {
             return supported;
         } catch {
@@ -287,8 +285,7 @@ library Utils {
      * @param addr Contract address
      * @return True if ERC20
      */
-    function isERC20(address addr) internal view returns (bool) {
-        //if (addr.code.length == 0) return false;
+    function isERC20(address addr) private view returns (bool) {
         try iERC20(addr).decimals() returns (uint8) {
             return true;
         } catch {
@@ -315,6 +312,7 @@ library Utils {
         if (_token == 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) {
             return (1e6, "1"); // hardcode USDC price to 1
         }
+        if (_token.code.length == 0) revert ContractNotFound();
         try CTC.checkPrice(_token) returns (uint256 _price, string memory _priceStr) {
             return (_price, _priceStr);
         } catch {
@@ -348,6 +346,7 @@ library Utils {
      * @return _addr Resolved address
      */
     function getENSAddress(address _resolver, bytes32 node) internal view returns (address _addr) {
+        if (_resolver.code.length == 0) return address(0);
         if (checkInterface(_resolver, iResolver.addr.selector)) {
             try iResolver(_resolver).addr(node) returns (address payable addr) {
                 return addr;
@@ -372,7 +371,8 @@ library Utils {
      * @return True if valid hex
      */
     function isHexPrefixed(string memory s) internal pure returns (bool) {
-        return LibString.startsWith(s, "0x") && LibString.is7BitASCII(s, ASCII_HEX_MASK_PREFIXED);
+        return bytes(s).length % 2 == 0 && LibString.startsWith(s, "0x")
+            && LibString.is7BitASCII(s, ASCII_HEX_MASK_PREFIXED);
     }
 
     /**
@@ -381,7 +381,7 @@ library Utils {
      * @return True if valid hex
      */
     function isHexNoPrefix(string memory s) internal pure returns (bool) {
-        return LibString.is7BitASCII(s, ASCII_HEX_MASK_NO_PREFIX);
+        return bytes(s).length % 2 == 0 && LibString.is7BitASCII(s, ASCII_HEX_MASK_NO_PREFIX);
     }
 
     /**
@@ -397,6 +397,7 @@ library Utils {
         returns (string memory result)
     {
         if (value == 0) return "0";
+        if (decimals > 42) revert InvalidDecimals(); // Prevent overflow in 10**decimals
         if (precision > decimals) return value.toString();
 
         /// @solidity memory-safe-assembly
@@ -459,17 +460,19 @@ library Utils {
         pure
         returns (uint256 value)
     {
+        if (decimals > 42) revert InvalidDecimals(); // Prevent overflow in 10**decimals
+
         /// @solidity memory-safe-assembly
         assembly {
             // Handle zero cases first
-            if or(iszero(_balance), iszero(price)) { value := 0 }
+            //if or(iszero(_balance), iszero(price)) { value := 0 } // it's auto 0 if 0
             if not(or(iszero(_balance), iszero(price))) {
                 switch gt(decimals, 6)
                 case 1 {
                     // If decimals > 6 (like ETH's 18 decimals)
                     value := div(mul(_balance, price), exp(10, decimals)) // Result is in USDC's 6 decimals
                 }
-                case 0 {
+                default {
                     switch lt(decimals, 6)
                     case 1 {
                         // If decimals < 6

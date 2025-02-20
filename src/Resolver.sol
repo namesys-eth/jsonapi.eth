@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: WTFPL.ETH
 pragma solidity ^0.8.0;
 
-import "./Interface.sol";
+import {iENS, iENSIP10} from "./interfaces/IENS.sol";
+import {iERC721} from "./interfaces/IERC.sol";
 import "./TickerManager.sol";
 import "./Utils.sol";
 import "./LibJSON.sol";
+import "solady/utils/LibString.sol";
 
 contract Resolver is TickerManager {
     using Utils for *;
     using LibJSON for *;
+    using LibString for *;
 
     address public constant PublicResolver = 0x0000000000000000000000000000000000000000;
 
@@ -19,12 +22,14 @@ contract Resolver is TickerManager {
     error NotImplemented(bytes request);
     error ResolverRequestFailed();
     error BadRequest();
+    error OnlyContentHashSupported();
 
-    constructor() {
-        //Tickers = new TickerManager();
-    }
+    constructor() {}
 
     function resolve(bytes calldata name, bytes calldata request) external view returns (bytes memory result) {
+        if (bytes4(request[:4]) != iResolver.contenthash.selector) {
+            revert OnlyContentHashSupported();
+        }
         uint256 index;
         uint256 level;
         bytes[] memory labels = new bytes[](8);
@@ -39,17 +44,14 @@ contract Resolver is TickerManager {
         }
 
         // Route based on label count, skip domain + eth parts
-        //if (level == 6) {
-        //return resolve6(labels[0], labels[1], labels[2], labels[3]);
-        //} else if (level == 5) {
-        //return resolve5(labels[0], labels[1], labels[2]);
-        //} else
         if (level == 4) {
-            //return resolve4(labels[0], labels[1]);
+            // <a>.<b>.jsonapi.eth
+            return resolve2(labels[0], labels[1]);
         } else if (level == 3) {
-            //return resolve3(labels[0]);
+            // <a>.jsonapi.eth
+            return resolve1(labels[0]);
         } else if (level == 2) {
-            // notapi.eth
+            // jsonapi.eth
             bytes4 selector = bytes4(request[:4]);
             if (iERC165(PublicResolver).supportsInterface(selector)) {
                 bool ok;
@@ -81,57 +83,50 @@ contract Resolver is TickerManager {
      * @param label First label (symbol/token/address/ENS)
      * @return result Response in JSON format
      */
-    function resolve1(bytes calldata _request, bytes memory label) internal view returns (bytes memory result) {
+    function resolve1(bytes memory label) internal view returns (bytes memory result) {
         address _addr = getAddrFromLabel(label);
         if (_addr == address(0)) {
-            return "Zero Address".toError();
+            return "Zero Address/".concat(string(label)).toError();
         }
+
         uint256 _type = _addr.getERCType();
         if (_type == 0) {
-            result = getFeaturedUser(_addr);
+            return getFeaturedUser(_addr).toJSON();
         } else if (_type == 20) {
-            result = _addr.getInfo20();
+            return _addr.getInfo20().toJSON();
         } else if (_type == 721) {
-            result = _addr.getInfo721();
-        }
-
-        return "Bad Request/Zero Address".toError();
-    }
-    /*
-    function resolve3(bytes memory label) internal view returns (bytes memory result) {
-        (address _addr, uint256 _type) = getAddrType(label);
-        if (_addr == address(0)) {
-            //return "No address found".toError();
-        }
-
-        if (_type == 20) {
-            //return _addr.getInfo20().toJSON();
-        } else if (_type == 721) {
-            //return _addr.getInfo721().toJSON();
-        } else if (_type == 151) {
-            // ENS
-            //result =  ENS.resolveENSAddress(_addr).toJSON();
-        }
-
-        bytes32 hash = keccak256(abi.encodePacked(ENSRoot, keccak256(label)));
-        if (ENS.recordExists(hash)) {
-            //(address _addr, address _owner, address _manager, address _resolver, bytes memory _err) = label.getENSAddr();
-
-            if (_addr != address(0)) {
-                //return Generator.toError("No address found");
-            }
-        }
-        // If not a ticker, try to resolve as address/ENS
-        address addr;// = label.getAddressFromLabel();
-        if (addr != address(0)) {
-            // Return featured token balances for address
-            bytes memory featured; //= getFeatured(addr);
-            if (featured.length > 0) {
-                //return featured.toJSON();
-            }
-            //return Generator.toError("No featured tokens");
+            return _addr.getInfo721().toJSON();
         }
 
         revert BadRequest();
-    }*/
+    }
+
+    function resolve2(bytes memory label1, bytes memory label2) internal view returns (bytes memory result) {
+        address _addr1 = getAddrFromLabel(label1);
+        if (_addr1 == address(0)) {
+            return "Zero Address/".concat(string(label1)).toError();
+        }
+        address _addr2 = getAddrFromLabel(label2);
+        if (_addr2 == address(0)) {
+            return "Zero Address/".concat(string(label2)).toError();
+        }
+
+        uint256 _type1 = _addr1.getERCType();
+        uint256 _type2 = _addr2.getERCType();
+
+        if (_type1 == 0) {
+            if (_type2 == 20) {
+                return _addr1.getUserInfo20(_addr2).toJSON();
+            } else if (_type2 == 721) {
+                return _addr1.getUserInfo721(_addr2).toJSON();
+            }
+        } else if (_type2 == 0) {
+            if (_type1 == 20) {
+                return _addr2.getUserInfo20(_addr1).toJSON();
+            } else if (_type1 == 721) {
+                return _addr2.getUserInfo721(_addr1).toJSON();
+            }
+        }
+        revert BadRequest();
+    }
 }

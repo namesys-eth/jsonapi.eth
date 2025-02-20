@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {ERC721} from "solady/tokens/ERC721.sol";
-import "../../src/Interface.sol";
+import {iERC721, iERC721ContractMetadata} from "../../src/interfaces/IERC.sol";
 
 contract SoladyNFT is ERC721, iERC721ContractMetadata {
     string private _name;

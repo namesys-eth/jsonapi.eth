@@ -7,7 +7,7 @@ import "./mocks/SoladyNFT.sol";
 import "../src/TickerManager.sol";
 import "../src/Utils.sol";
 import "./mocks/NonToken.sol";
-import "../src/Interface.sol";
+import {iERC20, iERC721} from "../src/interfaces/IERC.sol";
 
 contract TickerManagerTest is Test {
     event TickerAdded(string indexed _ticker, address indexed _addr, bytes32 node);
@@ -21,6 +21,7 @@ contract TickerManagerTest is Test {
     NonToken public nonToken;
     address owner = address(1);
     address nonOwner = address(2);
+    address user = address(3);
 
     function setUp() public {
         vm.startPrank(owner);
@@ -237,7 +238,7 @@ contract TickerManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_ETHDefaults() public view {
+    function test_ETHDefaults() public {
         bytes32 ethNode = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256("eth")));
         (uint8 fid, uint64 erc, address addr, string memory name, string memory symbol, uint8 decimals) =
             tickerManager.Tickers(ethNode);
@@ -290,7 +291,6 @@ contract TickerManagerTest is Test {
         vm.stopPrank();
     }
 
-    // Additional tests for better coverage:
     function test_SetTicker_NonFeatured() public {
         vm.startPrank(owner);
         bytes32 node = getNode("TEST");
@@ -378,26 +378,34 @@ contract TickerManagerTest is Test {
         vm.stopPrank();
     }
 
-    function test_GetFeaturedBalance_EdgeCases() public {
-        vm.startPrank(tickerManager.owner());
+    function test_GetFeaturedUser_EdgeCases() public {
+        vm.startPrank(owner);
 
         // Test with no featured tokens (except ETH)
-        bytes memory result = tickerManager.getFeaturedUser(address(this));
+        bytes memory result = tickerManager.getFeaturedUser(user);
+        assertTrue(result.length > 0);
+
+        // Test with zero balances
+        tickerManager.setTicker(true, address(token), "TK1");
+        result = tickerManager.getFeaturedUser(user);
         assertTrue(result.length > 0);
 
         // Test with max balances
-        tickerManager.setTicker(false, address(token), "TK1");
-        bytes32 node = getNode("TK1");
-        tickerManager.setFeatured(node);
-        deal(address(token), address(this), type(uint256).max);
-        result = tickerManager.getFeaturedUser(address(this));
+        deal(address(token), user, type(uint256).max);
+        result = tickerManager.getFeaturedUser(user);
+        assertTrue(result.length > 0);
+
+        // Test with mix of ERC20 and ERC721
+        tickerManager.setTicker(true, address(nft), "NFT1");
+        nft.mint(user, 1);
+        result = tickerManager.getFeaturedUser(user);
         assertTrue(result.length > 0);
 
         vm.stopPrank();
     }
 
     function test_SetTickerBatch() public {
-        vm.startPrank(tickerManager.owner());
+        vm.startPrank(owner);
 
         address[] memory addrs = new address[](2);
         string[] memory tickers = new string[](2);
@@ -413,7 +421,7 @@ contract TickerManagerTest is Test {
 
         // Verify each ticker
         for (uint256 i = 0; i < addrs.length; i++) {
-            bytes32 node = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes(tickers[i]))));
+            bytes32 node = getNode(tickers[i]);
             (uint8 featured, uint16 erc, address addr,,,) = tickerManager.Tickers(node);
             assertEq(featured, 0);
             assertEq(addr, addrs[i]);
@@ -436,7 +444,7 @@ contract TickerManagerTest is Test {
         tickerManager.setTickerBatch(addrs, tickers);
 
         // Test with non-token contract
-        vm.startPrank(tickerManager.owner());
+        vm.startPrank(owner);
         addrs[0] = address(nonToken);
         addrs[1] = address(token);
         tickers[0] = "NT";
@@ -449,14 +457,14 @@ contract TickerManagerTest is Test {
         addrs[1] = address(token);
         tickers[0] = "SAME";
         tickers[1] = "SAME";
-        bytes32 node = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("SAME"))));
+        bytes32 node = getNode("SAME");
         vm.expectRevert(abi.encodeWithSelector(TickerManager.DuplicateTicker.selector, node));
         tickerManager.setTickerBatch(addrs, tickers);
         vm.stopPrank();
     }
 
     function test_SetFeaturedBatch() public {
-        vm.startPrank(tickerManager.owner());
+        vm.startPrank(owner);
 
         // First set some tickers
         tickerManager.setTicker(false, address(token), "TK1");
@@ -464,8 +472,8 @@ contract TickerManagerTest is Test {
 
         // Get their nodes
         bytes32[] memory nodes = new bytes32[](2);
-        nodes[0] = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("TK1"))));
-        nodes[1] = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("NFT1"))));
+        nodes[0] = getNode("TK1");
+        nodes[1] = getNode("NFT1");
 
         // Test batch featuring
         tickerManager.setFeaturedBatch(nodes);
@@ -474,6 +482,7 @@ contract TickerManagerTest is Test {
         for (uint256 i = 0; i < nodes.length; i++) {
             (uint8 featured,,,,,) = tickerManager.Tickers(nodes[i]);
             assertEq(featured, i + 1); // +1 because ETH is at index 0
+            assertEq(tickerManager.Featured(i + 1), nodes[i]);
         }
 
         vm.stopPrank();
@@ -483,21 +492,31 @@ contract TickerManagerTest is Test {
         bytes32[] memory nodes = new bytes32[](2);
 
         // Test not owner
-        nodes[0] = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("TK1"))));
+        nodes[0] = getNode("TK1");
         vm.expectRevert(ERC173.OnlyOwner.selector);
         tickerManager.setFeaturedBatch(nodes);
 
-        vm.startPrank(tickerManager.owner());
+        vm.startPrank(owner);
 
         // Test with non-existent ticker
-        nodes[0] = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("NONEXISTENT"))));
+        nodes[0] = getNode("NONEXISTENT");
         vm.expectRevert(abi.encodeWithSelector(TickerManager.TickerNotFound.selector, nodes[0]));
         tickerManager.setFeaturedBatch(nodes);
 
         // Test with already featured ticker
         tickerManager.setTicker(true, address(token), "TK1");
-        nodes[0] = keccak256(abi.encodePacked(tickerManager.JSONAPIRoot(), keccak256(bytes("TK1"))));
+        nodes[0] = getNode("TK1");
         vm.expectRevert(abi.encodeWithSelector(TickerManager.DuplicateTicker.selector, nodes[0]));
+        tickerManager.setFeaturedBatch(nodes);
+
+        // Test exceeding max capacity
+        nodes = new bytes32[](255); // ETH + 255 would exceed uint8 max
+        for (uint256 i = 0; i < 255; i++) {
+            string memory ticker = string(abi.encodePacked("T", vm.toString(i)));
+            tickerManager.setTicker(false, address(token), ticker);
+            nodes[i] = getNode(ticker);
+        }
+        vm.expectRevert(TickerManager.FeaturedCapacityExceeded.selector);
         tickerManager.setFeaturedBatch(nodes);
 
         vm.stopPrank();

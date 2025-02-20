@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
 import "../src/ERC165.sol";
-import "../src/Interface.sol";
+import {iERC165, iERC721} from "../src/interfaces/IERC.sol";
 
 contract MockERC165 is ERC165 {}
 
