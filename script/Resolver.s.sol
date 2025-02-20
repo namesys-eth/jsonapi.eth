@@ -11,8 +11,7 @@ contract ResolverScript is Script {
 
     function run() public {
         vm.startBroadcast();
-        resolver = new Resolver();
-        
+        // resolver = new Resolver();
         vm.stopBroadcast();
     }
 }

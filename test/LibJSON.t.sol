@@ -31,7 +31,6 @@ contract LibJSONTest is Test, Brutalizer {
     }
 
     function test_Varint() public {
-
         assertEq(LibJSON.varint(127), hex"7f");
 
         // Test numbers requiring two bytes
