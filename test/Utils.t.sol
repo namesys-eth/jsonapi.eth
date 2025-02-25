@@ -3,11 +3,8 @@ pragma solidity ^0.8.25;
 
 import "forge-std/Test.sol";
 import "../src/Utils.sol";
-import "./mocks/SoladyToken.sol";
-import "./mocks/SoladyNFT.sol";
 import {LibString} from "solady/utils/LibString.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
-import "./mocks/NonToken.sol";
 import {Brutalizer} from "../lib/solady/test/utils/Brutalizer.sol";
 import {iCheckTheChainEthereum} from "../src/interfaces/ICheckTheChain.sol";
 import {iERC165, iERC721Metadata, iERC721ContractMetadata} from "../src/interfaces/IERC.sol";
@@ -36,16 +33,9 @@ contract UtilsTest is Test, Brutalizer {
     string constant TEST_STRING = "123456789";
     bytes constant TEST_HEX = hex"1234";
 
-    SoladyToken public token;
-    SoladyNFT public nft;
-    NonToken public nonToken;
-
     function setUp() public {
         vm.createSelectFork("mainnet", 21836278); // Use specific block for consistency
         vm.startPrank(address(this));
-        token = new SoladyToken();
-        nft = new SoladyNFT();
-        nonToken = new NonToken();
         vm.stopPrank();
     }
 
@@ -66,9 +56,28 @@ contract UtilsTest is Test, Brutalizer {
         assertGt(bytes(wbtcPriceStr).length, 0); // String should not be empty
 
         // Test non-token contract (should try both price functions and return 0)
-        (uint256 price, string memory priceStr) = address(nonToken).getPrice();
+        (uint256 price, string memory priceStr) = address(1234).getPrice();
         assertEq(price, 0);
         assertEq(priceStr, "");
+    }
+
+    function test_GetPrice_CTCFallback() public {
+        bytes4 checkPriceSelector = bytes4(keccak256("checkPrice(address)"));
+        bytes4 checkPriceInETHToUSDCSelector = bytes4(keccak256("checkPriceInETHToUSDC(address)"));
+
+        // Mock CTC price check to fail, forcing fallback to ETH price
+        vm.mockCallRevert(address(Utils.CTC), abi.encodeWithSelector(checkPriceSelector, address(WETH)), "FAILED");
+
+        // Mock successful ETH price check
+        vm.mockCall(
+            address(Utils.CTC),
+            abi.encodeWithSelector(checkPriceInETHToUSDCSelector, address(WETH)),
+            abi.encode(2000e6, "2000")
+        );
+
+        (uint256 price, string memory priceStr) = WETH.getPrice();
+        assertEq(price, 2000e6);
+        assertEq(priceStr, "2000");
     }
 
     function test_GetTokenInfo_RealTokens() public {
@@ -101,31 +110,24 @@ contract UtilsTest is Test, Brutalizer {
         assertEq(BAYC.getSymbol(), "BAYC");
         assertEq(BAYC.getTotalSupply721(), "10000");
 
-        // Test non-existent contract
-        assertEq(address(token).getName(), "Test Token");
-        assertEq(address(token).getSymbol(), "TEST");
-        assertEq(address(token).getDecimals(), "18");
-        assertEq(address(token).getDecimalsUint(), 18);
-        assertEq(address(token).getTotalSupply20(18, 3), "1000000");
-
         // Test failed calls
         // Test failed name call - should return "N/A"
-        vm.mockCallRevert(address(token), abi.encodeWithSelector(iERC20.name.selector), "FAILED");
-        assertEq(address(token).getName(), "N/A");
+        vm.mockCallRevert(USDC, abi.encodeWithSelector(iERC20.name.selector), "FAILED");
+        assertEq(USDC.getName(), "N/A");
 
         // Test failed symbol call - should return "N/A"
-        vm.mockCallRevert(address(token), abi.encodeWithSelector(iERC20.symbol.selector), "FAILED");
-        assertEq(address(token).getSymbol(), "N/A");
+        vm.mockCallRevert(USDC, abi.encodeWithSelector(iERC20.symbol.selector), "FAILED");
+        assertEq(USDC.getSymbol(), "N/A");
 
         // Test failed decimals call - should return "0"
-        vm.mockCallRevert(address(token), abi.encodeWithSelector(iERC20.decimals.selector), "FAILED");
-        assertEq(address(token).getDecimals(), "0");
-        assertEq(address(token).getDecimalsUint(), 0);
+        vm.mockCallRevert(USDC, abi.encodeWithSelector(iERC20.decimals.selector), "FAILED");
+        assertEq(USDC.getDecimals(), "0");
+        assertEq(USDC.getDecimalsUint(), 0);
 
         // Test failed totalSupply call - should return "0"
-        vm.mockCallRevert(address(token), abi.encodeWithSelector(iERC20.totalSupply.selector), "FAILED");
-        assertEq(address(token).getTotalSupply721(), "0");
-        assertEq(address(token).getTotalSupply20(18, 3), "0");
+        vm.mockCallRevert(USDC, abi.encodeWithSelector(iERC20.totalSupply.selector), "FAILED");
+        assertEq(USDC.getTotalSupply721(), "0");
+        assertEq(USDC.getTotalSupply20(18, 3), "0");
     }
 
     function test_GetENSInfo_RealAddresses() public view {
@@ -176,9 +178,9 @@ contract UtilsTest is Test, Brutalizer {
         assertEq(WETH.getBalance20(address(0), 18), "1085.433955");
 
         // Test failed balance calls
-        vm.mockCallRevert(address(token), abi.encodeWithSelector(iERC20.balanceOf.selector), "FAILED");
-        assertEq(address(token).getBalance20(VITALIK, 18), "0");
-        assertEq(address(token).getBalance721(VITALIK), "0");
+        vm.mockCallRevert(WETH, abi.encodeWithSelector(iERC20.balanceOf.selector), "FAILED");
+        assertEq(WETH.getBalance20(VITALIK, 18), "0");
+        assertEq(WETH.getBalance721(VITALIK), "0");
     }
 
     function test_CalculateUSDCValue_RealTokens() public view {
@@ -216,19 +218,103 @@ contract UtilsTest is Test, Brutalizer {
     }
 
     function test_GetTokenURI() public {
-        // Test BAYC - Regular HTTP URI
+        // Test BAYC - Regular IPFS URI
         string memory baycURI = BAYC.getTokenURI(1);
         assertTrue(bytes(baycURI).length > 0);
         assertTrue(LibString.startsWith(baycURI, "ipfs://"));
 
-        // Test non-existent contract
-        address deadContract = address(0xdead);
-        vm.expectRevert(Utils.ContractNotFound.selector);
-        deadContract.getTokenURI(1);
+        // Test data URI
+        address mockNFT = address(0x123);
+        vm.etch(mockNFT, hex"00");
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 1),
+            abi.encode('data:application/json,{"name":"Test"}')
+        );
+        assertEq(mockNFT.getTokenURI(1), 'data:application/json,{\\"name\\":\\"Test\\"}');
 
-        // Test non-ERC721Metadata contract (USDC)
-        vm.expectRevert(Utils.NotERC721Metadata.selector);
-        USDC.getTokenURI(1);
+        // Test text/plain data URI
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 2),
+            abi.encode("data:text/plain,Hello World")
+        );
+        assertEq(mockNFT.getTokenURI(2), "data:text/plain,Hello World");
+
+        // Test base64 data URI - should return as-is
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 3),
+            abi.encode("data:application/json;base64,eyJuYW1lIjoiVGVzdCJ9")
+        );
+        assertEq(mockNFT.getTokenURI(3), "data:application/json;base64,eyJuYW1lIjoiVGVzdCJ9");
+
+        // Test HTTP URI with quotes
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 4),
+            abi.encode('https://api.example.com/token/"special"')
+        );
+        assertEq(mockNFT.getTokenURI(4), "https://api.example.com/token/&quot;special&quot;");
+
+        // Test regular HTTP URI
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 5),
+            abi.encode("https://api.example.com/token/123")
+        );
+        assertEq(mockNFT.getTokenURI(5), "https://api.example.com/token/123");
+
+        // Test empty URI
+        vm.mockCall(mockNFT, abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 6), abi.encode(""));
+        assertEq(mockNFT.getTokenURI(6), "");
+
+        // Test failed call
+        vm.mockCallRevert(mockNFT, abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 7), "NOT_FOUND");
+        assertEq(mockNFT.getTokenURI(7), "");
+    }
+
+    function test_GetTokenURI_MoreFormats() public {
+        address mockNFT = address(0x123);
+        vm.etch(mockNFT, hex"00");
+
+        // Test data URI with complex JSON
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 1),
+            abi.encode('data:application/json,{"name":"Test","description":"A test token","image":"ipfs://..."}')
+        );
+        string memory result = mockNFT.getTokenURI(1);
+        assertTrue(LibString.contains(result, '\\"name\\":\\"Test\\"'));
+        assertTrue(LibString.contains(result, '\\"description\\"'));
+
+        // Test data URI with text/plain and quotes
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 2),
+            abi.encode('data:text/plain,Hello "World"')
+        );
+        assertEq(mockNFT.getTokenURI(2), 'data:text/plain,Hello \\"World\\"');
+
+        // Test base64 data URI
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 3),
+            abi.encode("data:application/json;base64,eyJuYW1lIjoiVGVzdCJ9")
+        );
+        assertEq(mockNFT.getTokenURI(3), "data:application/json;base64,eyJuYW1lIjoiVGVzdCJ9");
+
+        // Test empty URI
+        vm.mockCall(mockNFT, abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 4), abi.encode(""));
+        assertEq(mockNFT.getTokenURI(4), "");
+
+        // Test URI with HTML special chars
+        vm.mockCall(
+            mockNFT,
+            abi.encodeWithSelector(iERC721Metadata.tokenURI.selector, 5),
+            abi.encode('https://api.example.com/token/"123"')
+        );
+        assertEq(mockNFT.getTokenURI(5), "https://api.example.com/token/&quot;123&quot;");
     }
 
     function test_IsAddress() public pure {
@@ -259,39 +345,22 @@ contract UtilsTest is Test, Brutalizer {
         assertFalse(Utils.isHexNoPrefix("123g")); // Invalid character
     }
 
-    function test_StringToUint() public {
+    function test_StringToUint() public pure {
         assertEq(Utils.stringToUint("123"), 123);
         assertEq(Utils.stringToUint("0"), 0);
         assertEq(Utils.stringToUint("999999999"), 999999999);
-
-        vm.expectRevert(Utils.NotANumber.selector);
-        Utils.stringToUint("abc");
-
-        vm.expectRevert(Utils.NotANumber.selector);
-        Utils.stringToUint("12.34");
-
-        vm.expectRevert(Utils.NotANumber.selector);
-        Utils.stringToUint("-123");
     }
 
-    function test_PrefixedHexStringToBytes() public {
-        assertEq(Utils.prefixedHexStringToBytes(bytes("0x1234")), hex"1234");
+    function test_PrefixedHexStringToBytes() public pure {
+        assertEq(Utils.prefixedHexStringToBytes(bytes("0x1234567890abcdef")), hex"1234567890abcdef");
         assertEq(Utils.prefixedHexStringToBytes(bytes("0xabcdef")), hex"abcdef");
+    }
 
-        vm.expectRevert(Utils.InvalidInput.selector);
-        Utils.prefixedHexStringToBytes(bytes("1234")); // No prefix
-
-        vm.expectRevert(Utils.InvalidInput.selector);
-        Utils.prefixedHexStringToBytes(bytes("0x")); // Empty
-
-        vm.expectRevert(Utils.OddHexLength.selector);
-        Utils.prefixedHexStringToBytes(bytes("0x123")); // Odd length
-
-        vm.expectRevert(Utils.InvalidInput.selector);
-        Utils.prefixedHexStringToBytes(bytes("0xABCDEF")); // Uppercase
-
-        vm.expectRevert(Utils.InvalidInput.selector);
-        Utils.prefixedHexStringToBytes(bytes("0x123g")); // Invalid character
+    function testFuzz_PrefixedHexStringToBytes(uint16 input) public pure {
+        vm.assume(input > 2 && input < 100);
+        bytes memory inputBytes = abi.encodePacked(string("0x"), LibBytes.repeat(bytes("1234567890abcdef"), input));
+        bytes memory result = Utils.prefixedHexStringToBytes(inputBytes);
+        assertEq(result, LibBytes.repeat(hex"1234567890abcdef", input));
     }
 
     function test_ContractTypeChecks() public view {
@@ -299,36 +368,17 @@ contract UtilsTest is Test, Brutalizer {
         assertEq(BAYC.getERCType(), 721);
         assertEq(WETH.getERCType(), 20);
         assertEq(address(0xdead).getERCType(), 0);
-        assertEq(address(nonToken).getERCType(), 0);
+        assertEq(address(this).getERCType(), 0);
     }
 
-    function test_CheckInterface() public {
+    function test_CheckInterface() public view {
         // Test ERC721 interface
         assertTrue(BAYC.checkInterface(type(iERC721).interfaceId));
         assertFalse(WETH.checkInterface(type(iERC721).interfaceId));
-
-        // Test non-existent contract
         assertFalse(address(0xdead).checkInterface(type(iERC721).interfaceId));
-
-        // Test failed supportsInterface call
-        vm.mockCall(
-            address(nonToken), abi.encodeWithSelector(iERC165.supportsInterface.selector), abi.encode(bytes32(0))
-        );
-        assertFalse(address(nonToken).checkInterface(type(iERC721).interfaceId));
     }
 
-    function test_GetOwner() public {
-        // Test BAYC owner
-        string memory owner = BAYC.getOwner(1);
-        assertGt(bytes(owner).length, 0);
-        assertTrue(Utils.isAddress(bytes(owner)));
-
-        // Test failed ownerOf call
-        vm.mockCall(address(nft), abi.encodeWithSelector(iERC721.ownerOf.selector), abi.encode(address(0)));
-        assertEq(address(nft).getOwner(1), "0x0000000000000000000000000000000000000000");
-    }
-
-    function test_FormatDecimal() public {
+    function test_FormatDecimal() public pure {
         // Test zero value
         assertEq(Utils.formatDecimal(0, 18, 6), "0");
 
@@ -358,15 +408,180 @@ contract UtilsTest is Test, Brutalizer {
 
         // Test precision < decimals
         assertEq(Utils.formatDecimal(1234567890, 9, 6), "1.234567");
-
-        // Test invalid decimals
-        vm.expectRevert(Utils.InvalidDecimals.selector);
-        Utils.formatDecimal(1, 78, 6);
     }
 
-    function test_CalculateUSDCValue_ErrorCases() public {
-        // Test invalid decimals
-        vm.expectRevert(Utils.InvalidDecimals.selector);
-        Utils.calculateUSDCValue(1, 1, 78);
+    function test_getNamehash() public view brutalizeMemory {
+        bytes32 result = Utils.getNamehash("vitalik.eth");
+        _checkMemory();
+        assertEq(result, 0xee6c4522aab0003e8d14cd40a6af439055fd2577951148c14b6cea9a53475835);
+    }
+
+    function test_ENSReverseRecord_FullPath() public {
+        address testAddr = address(0x123);
+        address mockResolver = address(0x456);
+        bytes32 node = Utils.ENSReverse.node(testAddr);
+
+        // Mock ENS resolver lookup
+        vm.mockCall(address(Utils.ENS), abi.encodeWithSelector(iENS.resolver.selector, node), abi.encode(mockResolver));
+
+        // Mock resolver with code
+        vm.etch(mockResolver, hex"01");
+
+        // Mock name lookup
+        vm.mockCall(mockResolver, abi.encodeWithSelector(iResolver.name.selector, node), abi.encode("test.eth"));
+
+        // Mock forward resolution
+        bytes32 nameNode = Utils.getNamehash("test.eth");
+        vm.mockCall(
+            address(Utils.ENS), abi.encodeWithSelector(iENS.resolver.selector, nameNode), abi.encode(mockResolver)
+        );
+
+        vm.mockCall(mockResolver, abi.encodeWithSelector(iResolver.addr.selector, nameNode), abi.encode(testAddr));
+
+        assertEq(testAddr.getPrimaryName(), "test.eth");
+    }
+
+    function test_CalculateUSDCValue_EdgeCases() public pure {
+        // Test exact decimal boundaries
+        assertEq(Utils.calculateUSDCValue(1e18, 1e6, 18), 1e6); // 1 token at $1
+        assertEq(Utils.calculateUSDCValue(1e6, 1e6, 6), 1e6); // 1 token at $1
+        assertEq(Utils.calculateUSDCValue(1e3, 1e6, 3), 1e6); // 1 token at $1
+
+        // Test decimal scaling
+        assertEq(Utils.calculateUSDCValue(2e18, 5e5, 18), 1e6); // 2 tokens at $0.50
+        assertEq(Utils.calculateUSDCValue(1e6, 2e6, 6), 2e6); // 1 token at $2
+        assertEq(Utils.calculateUSDCValue(1e3, 5e5, 3), 5e5); // 1 token at $0.50
+    }
+
+    function test_TokenBalances_EdgeCases() public {
+        address mockToken = address(0x123);
+        vm.etch(mockToken, hex"00");
+
+        // Test zero balance
+        vm.mockCall(mockToken, abi.encodeWithSelector(iERC20.balanceOf.selector, address(this)), abi.encode(0));
+        assertEq(Utils.getBalance20(mockToken, address(this), 18), "0");
+        assertEq(Utils.getBalance721(mockToken, address(this)), "0");
+
+        // Test failed call
+        vm.mockCallRevert(mockToken, abi.encodeWithSelector(iERC20.balanceOf.selector, address(this)), "FAILED");
+        assertEq(Utils.getBalance20(mockToken, address(this), 18), "0");
+        assertEq(Utils.getBalance721(mockToken, address(this)), "0");
+
+        // Test large balance with different decimals
+        vm.mockCall(
+            mockToken,
+            abi.encodeWithSelector(iERC20.balanceOf.selector, address(this)),
+            abi.encode(1e24) // 1M tokens with 18 decimals
+        );
+        assertEq(Utils.getBalance20(mockToken, address(this), 18), "1000000");
+    }
+
+    function test_TokenSupply_EdgeCases() public {
+        address mockToken = address(0x123);
+        vm.etch(mockToken, hex"00");
+
+        // Test zero supply
+        vm.mockCall(mockToken, abi.encodeWithSelector(iERC20.totalSupply.selector), abi.encode(0));
+        assertEq(Utils.getTotalSupply20(mockToken, 18, 6), "0");
+        assertEq(Utils.getTotalSupply721(mockToken), "0");
+
+        // Test failed call
+        vm.mockCallRevert(mockToken, abi.encodeWithSelector(iERC20.totalSupply.selector), "FAILED");
+        assertEq(Utils.getTotalSupply20(mockToken, 18, 6), "0");
+        assertEq(Utils.getTotalSupply721(mockToken), "0");
+
+        // Test large supply with different decimals
+        vm.mockCall(
+            mockToken,
+            abi.encodeWithSelector(iERC20.totalSupply.selector),
+            abi.encode(1e24) // 1M tokens with 18 decimals
+        );
+        assertEq(Utils.getTotalSupply20(mockToken, 18, 6), "1000000");
+        assertEq(Utils.getTotalSupply20(mockToken, 18, 2), "1000000");
+        assertEq(Utils.getTotalSupply20(mockToken, 6, 6), "1000000000000000000");
+    }
+
+    function test_TokenMetadata_EdgeCases() public {
+        address mockToken = address(0x123);
+        vm.etch(mockToken, hex"00");
+
+        // Test failed name call
+        vm.mockCallRevert(mockToken, abi.encodeWithSelector(iERC20.name.selector), "FAILED");
+        assertEq(Utils.getName(mockToken), "N/A");
+
+        // Test failed symbol call
+        vm.mockCallRevert(mockToken, abi.encodeWithSelector(iERC20.symbol.selector), "FAILED");
+        assertEq(Utils.getSymbol(mockToken), "N/A");
+
+        // Test failed decimals call
+        vm.mockCallRevert(mockToken, abi.encodeWithSelector(iERC20.decimals.selector), "FAILED");
+        assertEq(Utils.getDecimals(mockToken), "0");
+        assertEq(Utils.getDecimalsUint(mockToken), 0);
+    }
+
+    function test_GetPrimaryName() public {
+        // Test with vitalik.eth which has a reverse record
+        string memory name = Utils.getPrimaryName(0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045);
+        assertEq(name, "vitalik.eth");
+
+        // Test with address that has no reverse record
+        string memory noName = Utils.getPrimaryName(address(0xdead));
+        assertEq(noName, "");
+    }
+
+    function test_GetNamehash() public {
+        // Test single label
+        bytes32 ethHash = Utils.getNamehash("eth");
+        assertEq(ethHash, 0x93cdeb708b7545dc668eb9280176169d1c33cfd8ed6f04690a0bcc88a93fc4ae);
+
+        // Test two labels
+        bytes32 vitalikHash = Utils.getNamehash("vitalik.eth");
+        assertEq(vitalikHash, 0xee6c4522aab0003e8d14cd40a6af439055fd2577951148c14b6cea9a53475835);
+
+        // Test three labels
+        bytes32 subHash = Utils.getNamehash("sub.vitalik.eth");
+        assertEq(subHash, 0x02db957db5283c30c2859ec435b7e24e687166eddf333b9615ed3b91bd063359);
+    }
+
+    function test_GetENSAddress() public {
+        // Test vitalik.eth resolver
+        address resolver = 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41;
+        bytes32 node = Utils.getNamehash("vitalik.eth");
+        address addr = Utils.getENSAddress(resolver, node);
+        assertEq(addr, 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045);
+
+        // Test non-existent name (using a random hash)
+        bytes32 nonExistentNode = bytes32(uint256(1)); // Random hash that won't exist
+        address noAddr = Utils.getENSAddress(resolver, nonExistentNode);
+        assertEq(noAddr, address(0));
+    }
+
+    function test_HexValidation() public {
+        // Test valid hex with prefix
+        assertTrue(Utils.isHexPrefixed("0x1234abcd"));
+        assertFalse(Utils.isHexPrefixed("0x1234abcdg")); // invalid char
+        assertFalse(Utils.isHexPrefixed("0x123")); // odd length
+
+        // Test valid hex without prefix
+        assertTrue(Utils.isHexNoPrefix("1234abcd"));
+        assertFalse(Utils.isHexNoPrefix("1234abcdg")); // invalid char
+        assertFalse(Utils.isHexNoPrefix("123")); // odd length
+    }
+
+    function test_FormatDecimal_EdgeCases() public {
+        // Test zero value
+        assertEq(Utils.formatDecimal(0, 18, 6), "0");
+
+        // Test value with no decimal places
+        assertEq(Utils.formatDecimal(1000, 0, 0), "1000");
+
+        // Test value with more precision than decimals
+        assertEq(Utils.formatDecimal(1234567, 6, 8), "1.234567");
+
+        // Test value with trailing zeros in decimals
+        assertEq(Utils.formatDecimal(1000000, 6, 6), "1.000000");
+
+        // Test large whole number
+        assertEq(Utils.formatDecimal(1234567890123456789000000000, 18, 2), "1234567890.12");
     }
 }

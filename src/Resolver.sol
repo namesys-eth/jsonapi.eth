@@ -13,23 +13,24 @@ contract Resolver is TickerManager {
     using LibJSON for *;
     using LibString for *;
 
-    address public constant PublicResolver = 0x0000000000000000000000000000000000000000;
+    address public PublicResolver = 0x4976fb03C32e5B8cfe2b6cCB31c09Ba78EBaBa41;
 
-    iENS public constant ENS = iENS(0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e);
-    iERC721 public constant ENS721 = iERC721(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
-    address public constant ENSWrapper = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401;
+    iENS public ENS = iENS(0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e);
+    iERC721 public ENS721; // = iERC721(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
+    address public ENSWrapper; // = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401;
 
     error NotImplemented(bytes request);
     error ResolverRequestFailed();
     error BadRequest();
     error OnlyContentHashSupported();
 
-    constructor() {}
+    constructor(address _publicResolver, address _ens721, address _ensWrapper) {
+        PublicResolver = _publicResolver;
+        ENS721 = iERC721(_ens721);
+        ENSWrapper = _ensWrapper;
+    }
 
     function resolve(bytes calldata name, bytes calldata request) external view returns (bytes memory result) {
-        if (bytes4(request[:4]) != iResolver.contenthash.selector) {
-            revert OnlyContentHashSupported();
-        }
         uint256 index;
         uint256 level;
         bytes[] memory labels = new bytes[](8);
@@ -42,8 +43,10 @@ contract Resolver is TickerManager {
                 labels[level++] = name[index:index += length];
             }
         }
-
-        // Route based on label count, skip domain + eth parts
+        if (level > 2 && bytes4(request[:4]) != iResolver.contenthash.selector) {
+            revert OnlyContentHashSupported();
+        }
+        // Route based on label count, skip jsonapi.eth part
         if (level == 4) {
             // <a>.<b>.jsonapi.eth
             return resolve2(labels[0], labels[1]);
@@ -53,7 +56,7 @@ contract Resolver is TickerManager {
         } else if (level == 2) {
             // jsonapi.eth
             bytes4 selector = bytes4(request[:4]);
-            if (iERC165(PublicResolver).supportsInterface(selector)) {
+            if (PublicResolver.checkInterface(selector)) {
                 bool ok;
                 (ok, result) = PublicResolver.staticcall(request);
                 if (!ok) revert ResolverRequestFailed();
@@ -102,31 +105,48 @@ contract Resolver is TickerManager {
     }
 
     function resolve2(bytes memory label1, bytes memory label2) internal view returns (bytes memory result) {
-        address _addr1 = getAddrFromLabel(label1);
-        if (_addr1 == address(0)) {
-            return "Zero Address/".concat(string(label1)).toError();
-        }
+        // First check L2 address and type
         address _addr2 = getAddrFromLabel(label2);
         if (_addr2 == address(0)) {
             return "Zero Address/".concat(string(label2)).toError();
         }
-
-        uint256 _type1 = _addr1.getERCType();
         uint256 _type2 = _addr2.getERCType();
 
-        if (_type1 == 0) {
-            if (_type2 == 20) {
-                return _addr1.getUserInfo20(_addr2).toJSON();
-            } else if (_type2 == 721) {
-                return _addr1.getUserInfo721(_addr2).toJSON();
-            }
-        } else if (_type2 == 0) {
-            if (_type1 == 20) {
-                return _addr2.getUserInfo20(_addr1).toJSON();
-            } else if (_type1 == 721) {
-                return _addr2.getUserInfo721(_addr1).toJSON();
+        // If L2 is ERC721 token
+        if (_type2 == 721) {
+            // Check if L1 is a token ID number
+            if (string(label1).isNumber()) {
+                return _addr2.getInfoByTokenId(string(label1).stringToUint()).toJSON();
             }
         }
+
+        // Get L1 address and check validity
+        address _addr1 = getAddrFromLabel(label1);
+        if (_addr1 == address(0)) {
+            return "Zero Address/".concat(string(label1)).toError();
+        }
+        uint256 _type1 = _addr1.getERCType();
+
+        // If L2 is normal address (EOA)
+        if (_type2 == 0) {
+            if (_type1 == 20) {
+                return _addr1.getUserInfo20(_addr2).toJSON();
+            } else if (_type1 == 721) {
+                return _addr1.getUserInfo721(_addr2).toJSON();
+            }
+            return "Invalid Token Type/".concat(string(label1)).toError();
+        }
+
+        // If L2 is ERC20 token and L1 is normal address
+        if (_type2 == 20 && _type1 == 0) {
+            return _addr1.getUserInfo20(_addr2).toJSON();
+        }
+
+        // If L2 is ERC721 token and L1 is normal address
+        if (_type2 == 721 && _type1 == 0) {
+            return _addr1.getUserInfo721(_addr2).toJSON();
+        }
+
         revert BadRequest();
     }
 }

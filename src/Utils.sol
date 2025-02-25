@@ -27,7 +27,6 @@ library Utils {
     error NotANumber();
     error OddHexLength();
     error InvalidDecimals();
-    error ContractNotFound();
     error NotERC721Metadata();
     error InvalidInput();
 
@@ -38,32 +37,20 @@ library Utils {
      * @dev Input must be even length, lowercase (0-9,a-f)
      */
     function prefixedHexStringToBytes(bytes memory input) internal pure returns (bytes memory result) {
-        if (input.length < 2) revert InvalidInput();
-        if (!isHexPrefixed(string(input))) revert InvalidInput();
-
         /// @solidity memory-safe-assembly
         assembly {
-            let outLen := shr(1, sub(mload(input), 2)) // (len - 2) / 2
-
-            result := add(mload(0x40), 0x20)
-            mstore(result, outLen)
-            let ptr := add(result, 0x20)
-            let end := add(ptr, outLen)
-            mstore(0x40, and(add(end, 31), not(31)))
-
-            // Process 2 hex chars at a time from left to right
-            let inPtr := add(input, 0x22) // Skip "0x" prefix
-            for {} lt(ptr, end) {} {
-                let byte1 := byte(0, mload(inPtr))
-                let byte2 := byte(0, mload(add(inPtr, 1)))
-                mstore8(
-                    ptr,
-                    or(shl(4, sub(byte1, add(48, mul(39, gt(byte1, 57))))), sub(byte2, add(48, mul(39, gt(byte2, 57)))))
-                )
-                ptr := add(ptr, 1)
-                inPtr := add(inPtr, 2)
+            result := mload(0x40)
+            mstore(result, shr(1, sub(mload(input), 2))) // store length = (len-2)/2
+            mstore(0x40, add(result, add(0x20, mload(result))))
+            let len := mload(input)
+            let inPtr := add(input, 0x20)
+            for { let i := 2 } lt(i, len) { i := add(i, 2) } {
+                let b1 := sub(byte(0, mload(add(inPtr, i))), 48)
+                let b2 := sub(byte(0, mload(add(inPtr, add(i, 1)))), 48)
+                b1 := sub(b1, mul(39, gt(b1, 9)))
+                b2 := sub(b2, mul(39, gt(b2, 9)))
+                mstore8(add(add(result, 0x20), shr(1, sub(i, 2))), or(shl(4, b1), b2))
             }
-            mstore(end, 0) // Zeroize the slot after
         }
     }
 
@@ -73,7 +60,6 @@ library Utils {
      * @return result Parsed number
      */
     function stringToUint(string memory s) internal pure returns (uint256 result) {
-        if (!isNumber(s)) revert NotANumber();
         /// @solidity memory-safe-assembly
         assembly {
             let end := add(mload(s), add(s, 0x20)) // combine length calc with ptr
@@ -209,11 +195,11 @@ library Utils {
      * @notice Get NFT owner
      * @param _contract NFT address
      * @param _tokenId Token ID
-     * @return Owner address as hex
+     * @return Owner address as hex string
      */
-    function getOwner(address _contract, uint256 _tokenId) internal view returns (string memory) {
+    function getNFTOwner(address _contract, uint256 _tokenId) internal view returns (string memory) {
         try iERC721(_contract).ownerOf(_tokenId) returns (address owner) {
-            return LibString.toHexString(owner);
+            return owner.toHexString();
         } catch {
             return "0x0000000000000000000000000000000000000000";
         }
@@ -257,13 +243,45 @@ library Utils {
      * @return _name Primary ENS name
      */
     function getPrimaryName(address _addr) internal view returns (string memory _name) {
-        if (_addr == address(0)) return "";
-        bytes32 revNode = ENSReverse.node(_addr);
-        address reverseResolver = ENS.resolver(revNode);
-        if (reverseResolver != address(0)) {
-            try iResolver(reverseResolver).name(revNode) returns (string memory name) {
-                return name;
+        bytes32 node = ENSReverse.node(_addr);
+        address resolver = ENS.resolver(node);
+        if (resolver.code.length > 0) {
+            try iResolver(resolver).name(node) returns (string memory name_) {
+                node = getNamehash(name_);
+                resolver = ENS.resolver(node);
+                if (resolver.code.length > 0) {
+                    try iResolver(resolver).addr(node) returns (address payable addr_) {
+                        if (_addr == addr_) return name_;
+                    } catch {}
+                }
             } catch {}
+        }
+    }
+
+    function getNamehash(string memory domain) internal pure returns (bytes32 result) {
+        /// @solidity memory-safe-assembly
+        assembly {
+            let ptr := add(domain, 32)
+            let end := add(ptr, mload(domain))
+            let tempStart := end
+            let tempEnd := end
+
+            for {} lt(ptr, end) {} {
+                end := sub(end, 1)
+                if eq(byte(0, mload(end)), 0x2e) {
+                    mstore(0x00, result)
+                    mstore(0x20, keccak256(tempStart, sub(tempEnd, tempStart)))
+                    result := keccak256(0x00, 0x40)
+                    tempEnd := end
+                    tempStart := tempEnd
+                    continue
+                }
+                tempStart := end
+            }
+
+            mstore(0x00, result)
+            mstore(0x20, keccak256(tempStart, sub(tempEnd, tempStart)))
+            result := keccak256(0x00, 0x40)
         }
     }
 
@@ -312,7 +330,6 @@ library Utils {
         if (_token == 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) {
             return (1e6, "1"); // hardcode USDC price to 1
         }
-        if (_token.code.length == 0) revert ContractNotFound();
         try CTC.checkPrice(_token) returns (uint256 _price, string memory _priceStr) {
             return (_price, _priceStr);
         } catch {
@@ -346,13 +363,10 @@ library Utils {
      * @return _addr Resolved address
      */
     function getENSAddress(address _resolver, bytes32 node) internal view returns (address _addr) {
-        if (_resolver.code.length == 0) return address(0);
         if (checkInterface(_resolver, iResolver.addr.selector)) {
             try iResolver(_resolver).addr(node) returns (address payable addr) {
                 return addr;
-            } catch {
-                return address(0);
-            }
+            } catch {}
         }
     }
 
@@ -371,7 +385,7 @@ library Utils {
      * @return True if valid hex
      */
     function isHexPrefixed(string memory s) internal pure returns (bool) {
-        return bytes(s).length % 2 == 0 && LibString.startsWith(s, "0x")
+        return LibString.startsWith(s, "0x") && bytes(s).length % 2 == 0
             && LibString.is7BitASCII(s, ASCII_HEX_MASK_PREFIXED);
     }
 
@@ -396,12 +410,16 @@ library Utils {
         pure
         returns (string memory result)
     {
-        if (value == 0) return "0";
-        if (decimals > 42) revert InvalidDecimals(); // Prevent overflow in 10**decimals
-        if (precision > decimals) return value.toString();
-
         /// @solidity memory-safe-assembly
         assembly {
+            if eq(value, 0) {
+                result := add(mload(0x40), 0x20)
+                mstore(result, 0x30)
+                return(result, 1)
+            }
+
+            if gt(precision, decimals) { precision := decimals }
+
             let whole := div(value, exp(10, decimals))
             let decimalValue := div(mod(value, exp(10, decimals)), exp(10, sub(decimals, precision)))
 
@@ -460,8 +478,6 @@ library Utils {
         pure
         returns (uint256 value)
     {
-        if (decimals > 42) revert InvalidDecimals(); // Prevent overflow in 10**decimals
-
         /// @solidity memory-safe-assembly
         assembly {
             // Handle zero cases first

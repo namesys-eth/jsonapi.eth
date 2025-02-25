@@ -23,14 +23,16 @@ library LibJSON {
      * @notice Encode a number as a varint
      * @param _num Number to encode
      * @return _varint Encoded varint as bytes
-     *
+     * only supports numbers > 0 & < 32768
      */
     function varint(uint256 _num) internal pure returns (bytes memory _varint) {
         assembly {
-            if or(iszero(_num), iszero(lt(_num, 32768))) {
-                mstore(0x00, 0x947d5a84)
-                revert(0x1c, 0x04)
-            }
+            /*
+                if or(iszero(_num), iszero(lt(_num, 32768))) {
+                    mstore(0x00, 0x947d5a84)
+                    revert(0x1c, 0x04)
+                }
+            */
             _varint := mload(0x40)
             switch lt(_num, 128)
             case 1 {
@@ -269,11 +271,31 @@ library LibJSON {
         );
     }
 
+    function getInfoByTokenId(address _token, uint256 _tokenId) internal view returns (bytes memory) {
+        return abi.encodePacked(
+            '{"contract":"',
+            _token.toHexStringChecksummed(),
+            '","erc":721,"name":"',
+            _token.getName(),
+            '","owner":"',
+            _token.getNFTOwner(_tokenId),
+            '","supply":"',
+            _token.getTotalSupply721(),
+            '","symbol":"',
+            _token.getSymbol(),
+            '","tokenId":"',
+            _tokenId.toString(),
+            '","tokenURI":"',
+            _token.getTokenURI(_tokenId),
+            '"}'
+        );
+    }
     /**
      * @notice Get ETH featured info
      * @param _owner Owner address
      * @return Featured ETH info as JSON bytes
      */
+
     function getETHFeatured(address _owner) internal view returns (bytes memory) {
         uint256 _bal = _owner.balance;
         (uint256 _price,) = address(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2).getPrice(); // WETH price

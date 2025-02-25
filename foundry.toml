@@ -11,6 +11,8 @@ viaIR = true
 # The number of optimizer runs
 optimizer_runs = 666
 gas_reports = ["*"]
+default.allow_internal_expect_revert = true
 
 [rpc_endpoints]
 mainnet = "https://rpc.ankr.com/eth"
+testnet = "https://rpc.ankr.com/eth_sepolia"

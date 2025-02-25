@@ -189,7 +189,7 @@ contract TickerManager is ERC165 {
     function setFeaturedBatch(bytes32[] calldata nodes) external onlyOwner {
         uint256 len = nodes.length;
         if (len == 0) revert InvalidInput();
-        if (Featured.length + len > MAX_FEATURED) revert FeaturedCapacityExceeded();
+        if (Featured.length + len >= MAX_FEATURED) revert FeaturedCapacityExceeded();
 
         for (uint256 i = 0; i < len; i++) {
             bytes32 node = nodes[i];
@@ -239,7 +239,7 @@ contract TickerManager is ERC165 {
         if (ticker._featured > 0) revert DuplicateTicker(node);
 
         uint256 fid = Featured.length;
-        if (fid >= MAX_FEATURED) revert FeaturedCapacityExceeded();
+        if (fid == MAX_FEATURED) revert FeaturedCapacityExceeded();
 
         ticker._featured = uint8(fid);
         Featured.push(node);
