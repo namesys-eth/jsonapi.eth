@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: WTFPL.ETH
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.25;
 
+/**
+ * Title: Utils
+ * Author: WTFPL.ETH
+ * Description: Utility functions for token and address operations
+ *
+ * This library provides utility functions for various operations related to tokens,
+ * addresses, and data formatting. It includes helpers for ENS resolution, token type detection,
+ * string manipulation, and numeric conversions.
+ *
+ * Key features:
+ * - Token type detection (ERC20, ERC721)
+ * - ENS name resolution
+ * - String and address formatting
+ * - Numeric conversions with decimal handling
+ */
 import {iERC20, iERC721, iERC721Metadata, iERC165} from "./interfaces/IERC.sol";
 import {iENS, iENSReverse, iResolver} from "./interfaces/IENS.sol";
 import {iCheckTheChainEthereum} from "./interfaces/ICheckTheChain.sol";
@@ -12,7 +27,7 @@ library Utils {
     using LibString for *;
 
     iCheckTheChainEthereum internal constant CTC = iCheckTheChainEthereum(0x0000000000cDC1F8d393415455E382c30FBc0a84);
-
+    address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     iENS internal constant ENS = iENS(0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e);
     iERC721 internal constant ENS721 = iERC721(0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85);
     address internal constant ENSWrapper = 0xD4416b13d2b3a9aBae7AcD5D6C2BbDBE25686401;
@@ -31,16 +46,15 @@ library Utils {
     error InvalidInput();
 
     /**
-     * @notice Convert hex string to bytes
+     * @notice Convert ASCII Hex string to bytes
      * @param input Hex string with "0x" prefix
      * @return result Converted bytes
-     * @dev Input must be even length, lowercase (0-9,a-f)
      */
     function prefixedHexStringToBytes(bytes memory input) internal pure returns (bytes memory result) {
         /// @solidity memory-safe-assembly
         assembly {
             result := mload(0x40)
-            mstore(result, shr(1, sub(mload(input), 2))) // store length = (len-2)/2
+            mstore(result, shr(1, sub(mload(input), 2)))
             mstore(0x40, add(result, add(0x20, mload(result))))
             let len := mload(input)
             let inPtr := add(input, 0x20)
@@ -49,20 +63,20 @@ library Utils {
                 let b2 := sub(byte(0, mload(add(inPtr, add(i, 1)))), 48)
                 b1 := sub(b1, mul(39, gt(b1, 9)))
                 b2 := sub(b2, mul(39, gt(b2, 9)))
-                mstore8(add(add(result, 0x20), shr(1, sub(i, 2))), or(shl(4, b1), b2))
+                mstore8(add(add(result, 0x20), div(sub(i, 2), 2)), add(shl(4, b1), b2))
             }
         }
     }
 
     /**
-     * @dev Convert string to uint256
+     * @notice Convert string to uint256
      * @param s String containing only digits
      * @return result Parsed number
      */
     function stringToUint(string memory s) internal pure returns (uint256 result) {
         /// @solidity memory-safe-assembly
         assembly {
-            let end := add(mload(s), add(s, 0x20)) // combine length calc with ptr
+            let end := add(mload(s), add(s, 0x20))
             for { let ptr := add(s, 0x20) } lt(ptr, end) { ptr := add(ptr, 1) } {
                 result := add(mul(result, 10), sub(byte(0, mload(ptr)), 48))
             }
@@ -70,7 +84,7 @@ library Utils {
     }
 
     /**
-     * @notice Check if input is valid ETH address
+     * @notice Check if input is valid ETH address string
      * @param data Input bytes to check
      * @return True if valid address
      */
@@ -105,32 +119,6 @@ library Utils {
     }
 
     /**
-     * @notice Get token decimals
-     * @param _contract Token address
-     * @return Decimals as string
-     */
-    function getDecimals(address _contract) internal view returns (string memory) {
-        try iERC20(_contract).decimals() returns (uint8 decimals) {
-            return decimals.toString();
-        } catch {
-            return "0";
-        }
-    }
-
-    /**
-     * @notice Get token decimals
-     * @param _contract Token address
-     * @return Decimals as uint
-     */
-    function getDecimalsUint(address _contract) internal view returns (uint8) {
-        try iERC20(_contract).decimals() returns (uint8 decimals) {
-            return decimals;
-        } catch {
-            return 0;
-        }
-    }
-
-    /**
      * @notice Get token total supply
      * @param _contract Token address
      * @return Total supply as string
@@ -138,40 +126,6 @@ library Utils {
     function getTotalSupply721(address _contract) internal view returns (string memory) {
         try iERC20(_contract).totalSupply() returns (uint256 totalSupply) {
             return totalSupply.toString();
-        } catch {
-            return "0";
-        }
-    }
-
-    /**
-     * @notice Get token total supply
-     * @param _contract Token address
-     * @param _decimals Token decimals
-     * @param _precision Precision for formatting
-     * @return Total supply as string
-     */
-    function getTotalSupply20(address _contract, uint8 _decimals, uint8 _precision)
-        internal
-        view
-        returns (string memory)
-    {
-        try iERC20(_contract).totalSupply() returns (uint256 totalSupply) {
-            return formatDecimal(totalSupply, _decimals, _precision > _decimals ? _precision - _decimals : _precision);
-        } catch {
-            return "0";
-        }
-    }
-
-    /**
-     * @notice Get token balance
-     * @param _contract Token address
-     * @param _account Account to check
-     * @param _decimals Token decimals
-     * @return Balance as string
-     */
-    function getBalance20(address _contract, address _account, uint8 _decimals) internal view returns (string memory) {
-        try iERC20(_contract).balanceOf(_account) returns (uint256 balance) {
-            return formatDecimal(balance, _decimals, 6);
         } catch {
             return "0";
         }
@@ -209,30 +163,15 @@ library Utils {
      * @notice Get NFT token URI
      * @param _contract NFT address
      * @param _tokenId Token ID
-     * @return Token URI
+     * @return _tokenURI The token URI string
      */
-    function getTokenURI(address _contract, uint256 _tokenId) internal view returns (string memory) {
+    function getTokenURI(address _contract, uint256 _tokenId) internal view returns (string memory _tokenURI) {
         try iERC721Metadata(_contract).tokenURI(_tokenId) returns (string memory tokenURI) {
-            if (bytes(tokenURI).length == 0) return "";
-            if (tokenURI.startsWith("data:")) {
-                if (tokenURI.startsWith("data:application/json,")) {
-                    return tokenURI.escapeJSON();
-                } else if (tokenURI.startsWith("data:text/plain,")) {
-                    return tokenURI.escapeJSON();
-                }
-                // Return as-is for other data URIs (e.g. base64)
-                return tokenURI;
-            }
-
-            // Handle URIs with quotes that need escaping
             if (tokenURI.contains('"')) {
-                return tokenURI.escapeHTML();
+                return tokenURI.escapeJSON();
             }
-
             return tokenURI;
-        } catch {
-            return "";
-        }
+        } catch {}
     }
 
     iENSReverse internal constant ENSReverse = iENSReverse(0xa58E81fe9b61B5c3fE2AFD33CF304c454AbFc7Cb);
@@ -318,7 +257,7 @@ library Utils {
      */
     function getERCType(address addr) internal view returns (uint256) {
         if (addr.code.length == 0) return 0;
-        return isERC721(addr) ? 721 : isERC20(addr) ? 20 : 0;
+        return isERC20(addr) ? 20 : isERC721(addr) ? 721 : 0;
     }
 
     /**
@@ -326,8 +265,8 @@ library Utils {
      * @param _token Token address
      * @return Price and formatted string
      */
-    function getPrice(address _token) internal view returns (uint256, string memory) {
-        if (_token == 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48) {
+    function checkTheChain(address _token) internal view returns (uint256, string memory) {
+        if (_token == USDC) {
             return (1e6, "1"); // hardcode USDC price to 1
         }
         try CTC.checkPrice(_token) returns (uint256 _price, string memory _priceStr) {
@@ -376,7 +315,7 @@ library Utils {
      * @return True if valid number
      */
     function isNumber(string memory s) internal pure returns (bool) {
-        return LibString.is7BitASCII(s, ASCII_NUMBER_MASK);
+        return s.is7BitASCII(ASCII_NUMBER_MASK);
     }
 
     /**
@@ -385,42 +324,28 @@ library Utils {
      * @return True if valid hex
      */
     function isHexPrefixed(string memory s) internal pure returns (bool) {
-        return LibString.startsWith(s, "0x") && bytes(s).length % 2 == 0
-            && LibString.is7BitASCII(s, ASCII_HEX_MASK_PREFIXED);
-    }
-
-    /**
-     * @notice Check if hex without prefix
-     * @param s String to check
-     * @return True if valid hex
-     */
-    function isHexNoPrefix(string memory s) internal pure returns (bool) {
-        return bytes(s).length % 2 == 0 && LibString.is7BitASCII(s, ASCII_HEX_MASK_NO_PREFIX);
+        return s.startsWith("0x") && bytes(s).length % 2 == 0 && s.is7BitASCII(ASCII_HEX_MASK_PREFIXED);
     }
 
     /**
      * @notice Format number with decimals
      * @param value Number to format
      * @param decimals Decimal places in input
-     * @param precision Output decimal places
      * @return result Formatted string
      */
-    function formatDecimal(uint256 value, uint256 decimals, uint256 precision)
-        internal
-        pure
-        returns (string memory result)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
+    function toDecimal(uint256 value, uint256 decimals) internal pure returns (string memory result) {
+        assembly ("memory-safe") {
             if eq(value, 0) {
                 result := add(mload(0x40), 0x20)
                 mstore(result, 0x30)
                 return(result, 1)
             }
 
+            let whole := div(value, exp(10, decimals))
+            let precision := 6
+            //if iszero(whole) { precision := 6 }
             if gt(precision, decimals) { precision := decimals }
 
-            let whole := div(value, exp(10, decimals))
             let decimalValue := div(mod(value, exp(10, decimals)), exp(10, sub(decimals, precision)))
 
             // We allocate max needed memory: 78 digits + 1 decimal point
@@ -432,7 +357,7 @@ library Utils {
 
             // Write decimal digits from right to left if we have them
             if gt(decimalValue, 0) {
-                let check := 0
+                let check := 0 // skip trailing zeros from decimal value
                 for { let i := 0 } lt(i, precision) { i := add(i, 1) } {
                     let digit := mod(decimalValue, 10)
                     if or(gt(digit, 0), gt(check, 0)) {
@@ -473,31 +398,15 @@ library Utils {
      * @param decimals Token decimals
      * @return value Result in USDC
      */
-    function calculateUSDCValue(uint256 _balance, uint256 price, uint8 decimals)
-        internal
-        pure
-        returns (uint256 value)
-    {
-        /// @solidity memory-safe-assembly
-        assembly {
-            // Handle zero cases first
-            //if or(iszero(_balance), iszero(price)) { value := 0 } // it's auto 0 if 0
+    function toUSDC(uint256 _balance, uint256 price, uint8 decimals) internal pure returns (uint256 value) {
+        assembly ("memory-safe") {
             if not(or(iszero(_balance), iszero(price))) {
                 switch gt(decimals, 6)
-                case 1 {
-                    // If decimals > 6 (like ETH's 18 decimals)
-                    value := div(mul(_balance, price), exp(10, decimals)) // Result is in USDC's 6 decimals
-                }
+                case 1 { value := div(mul(_balance, price), exp(10, decimals)) }
                 default {
                     switch lt(decimals, 6)
-                    case 1 {
-                        // If decimals < 6
-                        value := mul(div(mul(_balance, price), 1000000), exp(10, sub(6, decimals))) // Then scale up to 6 decimals
-                    }
-                    default {
-                        // If decimals == 6
-                        value := div(mul(_balance, price), 1000000)
-                    }
+                    case 1 { value := mul(div(mul(_balance, price), 1000000), exp(10, sub(6, decimals))) }
+                    default { value := div(mul(_balance, price), 1000000) }
                 }
             }
         }

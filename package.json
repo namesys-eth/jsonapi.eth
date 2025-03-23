@@ -5,11 +5,13 @@
   "repository": "https://github.com/namesys-eth/notapi-eth.git",
   "author": "0xc0de4c0ffee <43116881+0xc0de4c0ffee@users.noreply.github.com>",
   "scripts": {
-    "test": "forge fmt && forge test --fork-url mainnet -vvv --fork-block-number 21836278 --gas-report --watch",
-    "coverage": "forge coverage --fork-url mainnet -vvv --fork-block-number 21836278 --ir-minimum",
-    "sim": "forge script ./script/Resolver.s.sol:ResolverScript --rpc-url testnet --account testnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvvv RUST_BACKTRACE=full",
-    "testnet": "forge script ./script/Resolver.s.sol:ResolverScript --rpc-url testnet --account mainnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvv --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY  RUST_BACKTRACE=full",
-    "mainnet": "forge script ./script/Resolver.s.sol:ResolverScript --rpc-url mainnet --account mainnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvv --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY  RUST_BACKTRACE=full"
-  },
-  "license": "WTFPL.ETH"
+    "test": "source .env && forge fmt && forge test --fork-url $ETH_RPC_URL -vvv --fork-block-number 21836278 --gas-report --watch",
+    "snap": "source .env && forge fmt && forge snapshot --fork-url $ETH_RPC_URL -vvv --fork-block-number 21836278 --gas-report --watch",
+    "coverage": "source .env && forge coverage --fork-url $ETH_RPC_URL -vvv --fork-block-number 21836278 --ir-minimum",
+    "verifytestnet":"source .env && forge verify-contract 0xbefdff7726de2db5a5a31d64f5cfb92017490d2f src/Resolver.sol:Resolver --chain-id 11155111 --etherscan-api-key $ETHERSCAN_API_KEY --verifier etherscan",
+    "verifymainnet":"source .env && forge verify-contract --chain-id 1 --etherscan-api-key $ETHERSCAN_KEY 0xbefdff7726de2db5a5a31d64f5cfb92017490d2f src/Resolver.sol:Resolver",
+    "sim": "source .env && forge script ./script/Resolver.s.sol:ResolverScript --rpc-url $ETH_RPC_URL --account testnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvvv RUST_BACKTRACE=full",
+    "testnet": "source .env && forge script ./script/Resolver.s.sol:ResolverScript --rpc-url testnet --account testnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvv --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY  RUST_BACKTRACE=full",
+    "mainnet": "source .env && forge script ./script/Resolver.s.sol:ResolverScript --rpc-url $ETH_RPC_URL --account testnet --sender 0x9906b794407bbe3c1ca9741fdb30dc2facc838de -vvv --broadcast --verify --etherscan-api-key $ETHERSCAN_API_KEY  RUST_BACKTRACE=full"
+  }
 }

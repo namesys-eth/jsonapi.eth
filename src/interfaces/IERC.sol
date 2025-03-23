@@ -1,17 +1,26 @@
 // SPDX-License-Identifier: WTFPL.ETH
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.25;
 
 /**
- * @title ERC165 Interface
- * @notice Standard interface for ERC165 interface detection
+ * Title: ERC Interface Definitions
+ * Author: WTFPL.ETH
+ * Description: Standard interfaces for ERC token standards
+ *
+ * This file contains interface definitions for various ERC standards used in the system.
+ * It includes interfaces for ERC165, ERC173, ERC20, ERC721, and extensions.
+ */
+
+/**
+ * Interface: iERC165
+ * Standard interface for ERC165 interface detection
  */
 interface iERC165 {
     function supportsInterface(bytes4 interfaceId) external view returns (bool);
 }
 
 /**
- * @title ERC173 Interface
- * @notice Standard interface for contract ownership
+ * Interface: iERC173
+ * Standard interface for contract ownership
  */
 interface iERC173 {
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
@@ -21,8 +30,8 @@ interface iERC173 {
 }
 
 /**
- * @title ERC20 Interface
- * @notice Standard interface for fungible tokens
+ * Interface: iERC20
+ * Standard interface for fungible tokens
  */
 interface iERC20 {
     function name() external view returns (string memory);
@@ -39,8 +48,8 @@ interface iERC20 {
 }
 
 /**
- * @title ERC721 Interface
- * @notice Standard interface for non-fungible tokens
+ * Interface: iERC721
+ * Standard interface for non-fungible tokens
  */
 interface iERC721 is iERC165 {
     event Transfer(address indexed _from, address indexed _to, uint256 indexed _tokenId);
@@ -59,8 +68,8 @@ interface iERC721 is iERC165 {
 }
 
 /**
- * @title ERC721 Metadata Interface
- * @notice Extension interface for ERC721 token metadata
+ * Interface: iERC721Metadata
+ * Extension interface for ERC721 token metadata
  */
 interface iERC721Metadata is iERC721 {
     function name() external view returns (string memory _name);
@@ -69,8 +78,8 @@ interface iERC721Metadata is iERC721 {
 }
 
 /**
- * @title ERC721 Enumerable Interface
- * @notice Extension interface for enumerable ERC721 tokens
+ * Interface: iERC721Enumerable
+ * Extension interface for enumerable ERC721 tokens
  */
 interface iERC721Enumerable is iERC721 {
     function totalSupply() external view returns (uint256);
@@ -79,8 +88,8 @@ interface iERC721Enumerable is iERC721 {
 }
 
 /**
- * @title ERC721 Contract Metadata Interface
- * @notice Extension interface for ERC721 contract-level metadata
+ * Interface: iERC721ContractMetadata
+ * Extension interface for ERC721 contract-level metadata
  */
 interface iERC721ContractMetadata {
     function contractURI() external view returns (string memory);

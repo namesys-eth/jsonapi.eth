@@ -4,16 +4,48 @@ Onchain dynamic IPLD/dag-json contenthash generator using ENS wildcard.
 
 ## Overview
 
-jsonapi.eth is an ENS resolver that generates dynamic JSON contenthash for Ethereum token and address queries through ENS wildcard resolution.
+jsonapi.eth is an ENS resolver that generates dynamic JSON contenthash for Ethereum token and address queries through ENS wildcard resolution, implementing the ENSIP-10 standard.
 
 ## Features
 
+- ENS subname wildcard resolution with ENSIP-10 support
 - Query user info, balances and ERC20/721 token information
-- Featured token support with ETH, ENS Gov token and ENS domain NFT built-in
+- Featured token support with ETH, WETH, and other tokens
 - Dynamic JSON responses via ENS contenthash
-- USDC price feeds for token valuations using Uniseap-v3
+- ERC token type detection (ERC20, ERC721)
+- Address and ENS name resolution
+- NFT token ID lookup
+- Token price and valuation using Uniswap-v3
+- Token registration system with ticker management
 
 ## Query & Response Format
+
+### User Portfolio Query
+Get user portfolio with balance information
+```
+<ens-name>.jsonapi.eth       # Get portfolio by ENS name
+<0xaddress>.jsonapi.eth      # Get portfolio by address
+
+Examples:
+vitalik.jsonapi.eth
+0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045.jsonapi.eth
+
+Response:
+{
+  "ok": true,
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 0,
+  "user": {
+    "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+    "name": "vitalik.eth",
+    "eth": {
+      "balance": "964458627646955172909",
+      "price": "2682386649"
+    }
+  }
+}
+```
 
 ### Token Info Query
 Get metadata, supply and price for any ERC20/721 token
@@ -23,21 +55,21 @@ Get metadata, supply and price for any ERC20/721 token
 
 Examples:
 weth.jsonapi.eth
-dai.jsonapi.eth
 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2.jsonapi.eth
 
 Response (ERC20):
 {
   "ok": true,
-  "time": "1708482632",
-  "block": "19234567",
-  "result": {
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 20,
+  "token": {
     "contract": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     "decimals": 18,
-    "erc": 20,
+    "marketcap": "7911248370.108",
     "name": "Wrapped Ether",
-    "price": "3141.521234",
-    "supply": "1234.567",
+    "price": "2682.386649",
+    "supply": "2949331.847",
     "symbol": "WETH"
   }
 }
@@ -45,14 +77,14 @@ Response (ERC20):
 Response (ERC721):
 {
   "ok": true,
-  "time": "1708482632",
-  "block": "19234567",
-  "result": {
-    "contract": "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
-    "erc": 721,
-    "name": "Ethereum Name Service",
-    "supply": "N/A",
-    "symbol": "ENS"
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 721,
+  "token": {
+    "contract": "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+    "name": "BoredApeYachtClub",
+    "supply": "10000",
+    "symbol": "BAYC"
   }
 }
 ```
@@ -61,92 +93,73 @@ Response (ERC721):
 Get specific token balance and metadata for any user
 ```
 <user>.<token>.jsonapi.eth   # Get user's token balance
-<token>.<user>.jsonapi.eth   # Alternative format
+<token>.<user>.jsonapi.eth   # Alternative format (both supported)
 
 Examples:
 vitalik.weth.jsonapi.eth
-weth.nick.jsonapi.eth
-dai.vitalik.jsonapi.eth
+weth.vitalik.jsonapi.eth
+0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045.0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2.jsonapi.eth
 
 Response (ERC20):
 {
   "ok": true,
-  "time": "1708482632",
-  "block": "19234567",
-  "result": {
-    "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    "_balance": "1234567890000000000000",
-    "balance": "1234.567890",
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 20,
+  "token": {
     "contract": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     "decimals": 18,
-    "ens": "vitalik.eth",
-    "erc": 20,
-    "name": "Wrapped Ether",
-    "price": "3141.52",
-    "supply": "1234.567",
+    "price": "2682.386649",
     "symbol": "WETH",
-    "value": "3878451.23"
+    "user": {
+      "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      "balance": "16320309787715287566"
+    }
   }
 }
 
 Response (ERC721):
 {
   "ok": true,
-  "time": "1708482632",
-  "block": "19234567",
-  "result": {
-    "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    "balance": "42",
-    "contract": "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
-    "ens": "vitalik.eth",
-    "erc": 721,
-    "name": "Ethereum Name Service",
-    "supply": "N/A",
-    "symbol": "ENS"
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 721,
+  "token": {
+    "contract": "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+    "name": "BoredApeYachtClub",
+    "symbol": "BAYC",
+    "supply": "10000",
+    "user": {
+      "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      "balance": "1"
+    }
   }
 }
 ```
 
-### User Portfolio Query
-Get all featured token balances for any user (includes ETH, WETH, ENS by default)
+### NFT Token ID Query
+Get metadata for a specific NFT token ID
 ```
-<ens-name>.jsonapi.eth       # Get portfolio by ENS
-<0xaddress>.jsonapi.eth      # Get portfolio by address
+<token-id>.<nft-contract>.jsonapi.eth
 
-Examples:
-vitalik.jsonapi.eth
-nick.jsonapi.eth
-0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045.jsonapi.eth
+Example:
+1234.bayc.jsonapi.eth
+1234.0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D.jsonapi.eth
 
 Response:
 {
   "ok": true,
-  "time": "1708482632",
-  "block": "19234567",
-  "result": {
-    "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-    "name": "vitalik.eth",
-    "erc20": {
-      "ETH": {
-        "_balance": "1234567890000000000000",
-        "balance": "1234.567890",
-        "contract": "N/A",
-        "decimals": 18,
-        "price": "3141.52",
-        "symbol": "ETH",
-        "totalsupply": "N/A",
-        "value": "3878451.23"
-      }// Other Featured ERC20.... 
-    },
-    "erc721": {
-      "ENS": {
-        "balance": "42",
-        "contract": "0x57f1887a8BF19b14fC0dF6Fd9B2acc9Af147eA85",
-        "supply": "N/A",
-        "symbol": "ENS"
-      }
-      // Other Featured ERC721....
-    }
+  "time": "1739434199",
+  "block": "21836278",
+  "erc": 721,
+  "token": {
+    "contract": "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+    "id": "1234",
+    "name": "BoredApeYachtClub",
+    "owner": "0xd1a770cff075f35fe5efdfc247ad1a5f7a7047a5",
+    "symbol": "BAYC",
+    "supply": "10000",
+    "tokenURI": "ipfs://QmeSjSinHpPnmXmspMjwiXyN6zS4E9zccariGR3jxcaWtq/1234"
   }
 }
 ```
@@ -155,10 +168,10 @@ Response:
 ```json
 {
   "ok": false,
-  "time": "1708482632",
-  "block": "19234567",
+  "time": "1739434199",
+  "block": "21836278",
   "error": "Error Message",
-  "data": "0x..."
+  "data": ""
 }
 ```
 
@@ -169,7 +182,7 @@ Response:
 forge build
 
 # Test
-yarn test
+forge test
 
 # Deploy
 forge script script/Deploy.s.sol:DeployScript --rpc-url mainnet --private-key <key>
@@ -178,22 +191,24 @@ forge script script/Deploy.s.sol:DeployScript --rpc-url mainnet --private-key <k
 ## Code Structure
 
 ### Source (`/src`)
+- `Resolver.sol` - Main ENS resolver contract with ENSIP-10 implementation
 - `LibJSON.sol` - DAG-JSON encoding and response formatting
-- `Resolver.sol` - Main ENS resolver contract
 - `TickerManager.sol` - Token registration and featured lists
-- `Utils.sol` - Token and address operations
+- `Utils.sol` - Token type detection and address operations
 - `ERC165.sol` - Interface detection
 - `ERC173.sol` - Contract ownership
 - `interfaces/` - Contract interfaces
 
 ### Tests (`/test`)
-- `LibJSON.t.sol` - JSON library tests
-- `Resolver.t.sol` - Resolver contract tests
-- `Utils.t.sol` - Utility function tests
-- `TickerManager.t.sol` - Token manager tests
+- `Resolver.t.sol` - Tests for ENS resolution and various query formats
+- `Utils.t.sol` - Tests for utility functions and token operations
+- `LibJSON.t.sol` - Tests for JSON encoding and formatting
+- `TickerManager.t.sol` - Tests for token ticker registration
+- `BillionGasReport.t.sol` - Gas optimization tests
+- `ERC20.t.sol` - ERC20 token functionality tests
+- `ERC721.t.sol` - ERC721 token functionality tests
 - `ERC173.t.sol` - Ownership tests
-- `ERC165.t.sol` - Interface tests
-- `mocks/` - Mock contracts for testing
+- `ERC165.t.sol` - Interface detection tests
 
 ## Libraries used 
 #### Solady : https://github.com/vectorized/solady
