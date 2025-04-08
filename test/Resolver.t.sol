@@ -121,7 +121,7 @@ contract ResolverTest is Test {
         assertEq(actual, expected);
     }
 
-    function test_ResolveSingleLabel_TokenAddress() public {
+    function test_ResolveSingleLabel_TokenAddress() public view {
         // Test 0xtoken.jsonapi.eth
 
         bytes memory name = abi.encodePacked(
@@ -216,7 +216,7 @@ contract ResolverTest is Test {
         assertEq(result, expected);
     }
 
-    function test_ResolveTwoLabels_AddressToken() public {
+    function test_ResolveTwoLabels_AddressToken() public view {
         // Test 0xuser.0xtoken.jsonapi.eth
         bytes[] memory labels = new bytes[](4);
         labels[0] = bytes(VITALIK.toHexString());

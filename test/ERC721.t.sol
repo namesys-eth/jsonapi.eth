@@ -46,17 +46,15 @@ contract ERC721Test is Test {
         //forge-fmt:disable-next-line
         string memory expected = string(
             abi.encodePacked(
-                '"erc":721,'
-                '"token":{',
-                    '"contract":"0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",',
-                    '"name":"BoredApeYachtClub",',
-                    '"supply":"10000",',
-                    '"symbol":"BAYC",',
-                    '"user":{',
-                        '"address":"0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",',
-                        '"balance":"1"',
-                    '}'
-                '}'
+                '"erc":721,' '"token":{',
+                '"contract":"0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",',
+                '"name":"BoredApeYachtClub",',
+                '"supply":"10000",',
+                '"symbol":"BAYC",',
+                '"user":{',
+                '"address":"0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",',
+                '"balance":"1"',
+                "}" "}"
             )
         );
 
@@ -68,17 +66,10 @@ contract ERC721Test is Test {
         uint256 tokenId = 1234;
         bytes memory info = BAYC.getInfoByTokenId(tokenId);
         //forge-fmt:disable-next-line
-        string memory expected = 
-            '"erc":721,'
-            '"token":{'
-                '"contract":"0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",'
-                '"id":"1234",'
-                '"name":"BoredApeYachtClub",'
-                '"owner":"0xd1a770cff075f35fe5efdfc247ad1a5f7a7047a5",'
-                '"symbol":"BAYC",'
-                '"supply":"10000",'
-                '"tokenURI":"ipfs://QmeSjSinHpPnmXmspMjwiXyN6zS4E9zccariGR3jxcaWtq/1234"'
-            '}';
+        string memory expected = '"erc":721,' '"token":{' '"contract":"0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",'
+            '"id":"1234",' '"name":"BoredApeYachtClub",' '"owner":"0xd1a770cff075f35fe5efdfc247ad1a5f7a7047a5",'
+            '"symbol":"BAYC",' '"supply":"10000",'
+            '"tokenURI":"ipfs://QmeSjSinHpPnmXmspMjwiXyN6zS4E9zccariGR3jxcaWtq/1234"' "}";
         console.log(expected);
 
         assertEq(string(info), expected);

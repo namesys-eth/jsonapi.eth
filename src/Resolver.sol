@@ -194,7 +194,7 @@ contract Resolver is TickerManager, iENSIP10 {
         return ("Multiple Tokens ".concat(_domain).toError());
     }
 
-    fallback(bytes calldata data) external payable onlyOwner returns (bytes memory)  {
+    fallback(bytes calldata data) external payable onlyOwner returns (bytes memory) {
         (bool ok, bytes memory result) = PublicResolver.delegatecall(data);
         if (!ok) revert ResolverRequestFailed();
         return result;

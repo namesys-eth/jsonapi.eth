@@ -4,25 +4,29 @@ pragma solidity ^0.8.25;
 import {Script, console} from "forge-std/Script.sol";
 import {TickerManager} from "../src/TickerManager.sol";
 import "solady/utils/LibString.sol";
+
 interface iToken {
     function symbol() external view returns (string memory);
 }
 
 contract SymbolScript is Script {
     using LibString for string;
+
     TickerManager public tickerManager;
     bytes32 jsonapiRoot;
-    
+
     function check(string memory symbol, address token) public {
         string memory s = iToken(token).symbol();
         require(symbol.toCase(true).eq(s.toCase(true)), string.concat("Symbol mismatch: ", symbol, " != ", s));
         console.log(symbol);
     }
+
     function checkAll() public {
         for (uint256 i = 0; i < symbols.length; i++) {
             check(symbols[i], symbolToAddress[symbols[i]]);
         }
     }
+
     function setUp() public {
         tickerManager = TickerManager(0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251);
         jsonapiRoot = tickerManager.JSONAPIRoot();
@@ -51,8 +55,28 @@ contract SymbolScript is Script {
     function namehash(string memory _symbol) public view returns (bytes32) {
         return keccak256(abi.encodePacked(jsonapiRoot, keccak256(bytes(_symbol))));
     }
+
     string[] public symbols = [
-        "dai", "weth", "usdc", "usdt", "bayc", "ens", "steth", "cbbtc", "wbtc", "link", "aave", "uni", "shib", "matic", "comp", "1inch", "grt", "bat", "ldo"];
+        "dai",
+        "weth",
+        "usdc",
+        "usdt",
+        "bayc",
+        "ens",
+        "steth",
+        "cbbtc",
+        "wbtc",
+        "link",
+        "aave",
+        "uni",
+        "shib",
+        "matic",
+        "comp",
+        "1inch",
+        "grt",
+        "bat",
+        "ldo"
+    ];
     mapping(string => address) public symbolToAddress;
 
     function run() public {
