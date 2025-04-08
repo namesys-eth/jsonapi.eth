@@ -6,6 +6,9 @@ Onchain dynamic IPLD/dag-json contenthash generator using ENS wildcard.
 
 jsonapi.eth is an ENS resolver that generates dynamic JSON contenthash for Ethereum token and address queries through ENS wildcard resolution, implementing the ENSIP-10 standard.
 
+### Resolver Deployment
+Mainnet: [0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251](https://etherscan.io/address/0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251)
+
 ## Features
 
 - ENS subname wildcard resolution with ENSIP-10 support
@@ -39,10 +42,8 @@ Response:
   "user": {
     "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
     "name": "vitalik.eth",
-    "eth": {
-      "balance": "964458627646955172909",
-      "price": "2682386649"
-    }
+    "balance": "964.458627",
+    "price": "2682.386649"
   }
 }
 ```
@@ -66,10 +67,10 @@ Response (ERC20):
   "token": {
     "contract": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
     "decimals": 18,
-    "marketcap": "7911248370.108",
+    "marketcap": "7911248370.108695",
     "name": "Wrapped Ether",
     "price": "2682.386649",
-    "supply": "2949331.847",
+    "supply": "2949331.847091",
     "symbol": "WETH"
   }
 }
@@ -113,7 +114,7 @@ Response (ERC20):
     "symbol": "WETH",
     "user": {
       "address": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
-      "balance": "16320309787715287566"
+      "balance": "16.320309"
     }
   }
 }

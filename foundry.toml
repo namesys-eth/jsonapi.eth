@@ -13,3 +13,6 @@ optimizer_runs = 666
 gas_reports = ["*"]
 default.allow_internal_expect_revert = true
 
+
+[rpc_endpoints]
+main = "https://eth.llamarpc.com"

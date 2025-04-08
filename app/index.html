@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    
+    <!-- Primary Meta Tags -->
+    <title>JSONAPI.ETH Resolver</title>
+    <meta name="title" content="JSONAPI.ETH Resolver">
+    <meta name="description" content="Onchain dynamic IPLD/dag-json contenthash generator using ENS wildcard resolution. Query Ethereum token and address data through simple ENS lookups.">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://jsonapi.eth.limo/">
+    <meta property="og:title" content="JSONAPI.ETH Resolver">
+    <meta property="og:description" content="Onchain dynamic IPLD/dag-json contenthash generator using ENS wildcard resolution. Query Ethereum token and address data through simple ENS lookups.">
+    <meta property="og:image" content="/namesys.svg">
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://jsonapi.eth.limo/">
+    <meta property="twitter:title" content="JSONAPI.ETH Resolver">
+    <meta property="twitter:description" content="Onchain dynamic IPLD/dag-json contenthash generator using ENS wildcard resolution. Query Ethereum token and address data through simple ENS lookups.">
+    <meta property="twitter:image" content="/namesys.svg">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/namesys.svg">
+    
+    <style>
+      .query-types {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+      .query-type {
+        padding: 8px 16px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      .query-type.active {
+        background-color: #444;
+        color: white;
+      }
+      pre {
+        background-color: #f7f7f7;
+        padding: 16px;
+        border-radius: 8px;
+        overflow: auto;
+        max-height: 500px;
+      }
+      
+      @media (max-width: 480px) {
+        .query-types {
+          flex-direction: column;
+          width: 100%;
+        }
+        .query-type {
+          width: 100%;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <div class="container">
+        <div class="header">
+          <img src="/namesys.svg" alt="NameSys Logo" class="logo" />
+          <h1>JSONAPI.ETH</h1>
+          <p class="subtitle">
+            Dynamic ENS resolver for onchain data queries
+          </p>
+          <div class="header-links">
+            <a href="https://github.com/namesys-eth/jsonapi.eth" target="_blank" class="header-link">
+              <img src="/github-mark.svg" alt="GitHub" class="header-icon" />
+              <span>GitHub</span>
+            </a>
+            <a href="https://etherscan.io/address/0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251" target="_blank" class="header-link">
+              <img src="/etherscan-logo-circle.svg" alt="Etherscan" class="header-icon" />
+              <span>Etherscan</span>
+            </a>
+          </div>
+        </div>
+        
+        <div class="docs">
+          <p>jsonapi.eth is an ENS resolver that generates dynamic IPLD/dag-json contenthash for Ethereum token and address queries through ENS wildcard resolution, implementing the ENSIP-10 standard.</p>
+          <p><strong>Resolver:</strong> <a href="https://etherscan.io/address/0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251" target="_blank">0xF31352EDE0b4673e101D4E77dE119ab7Dd5A7251</a></p>
+          <p>This allows any application to query onchain data like token prices, user balances, NFT metadata and more through simple ENS lookups.</p>
+        </div>
+        
+        <div class="query-section">
+          <h2>Query Types</h2>
+          
+          <div class="query-types">
+            <div class="query-type active" data-type="user">user</div>
+            <div class="query-type" data-type="token">token</div>
+            <div class="query-type" data-type="user_token">user+token</div>
+            <div class="query-type" data-type="nft">nft+id</div>
+          </div>
+          
+          <div class="query-info">
+            <div id="info-user" class="query-info-item active">
+              <h3>User Info Query</h3>
+              <p>Get user info with ETH balance information</p>
+            </div>
+            
+            <div id="info-token" class="query-info-item">
+              <h3>Token Info Query</h3>
+              <p>Get metadata, supply and price for any ERC20/721 token</p>
+            </div>
+            
+            <div id="info-user_token" class="query-info-item">
+              <h3>User Token Balance Query</h3>
+              <p>Get specific token balance and metadata for any user</p>
+            </div>
+            
+            <div id="info-nft" class="query-info-item">
+              <h3>NFT Token ID Query</h3>
+              <p>Get metadata for a specific NFT token ID</p>
+            </div>
+          </div>
+          
+          <form id="query-form">
+            <div id="user-field">
+              <label for="user">User (ENS name or address):</label>
+              <input type="text" id="user" name="user" placeholder="vitalik.eth or 0xd8da...">
+            </div>
+            
+            <div id="token-field" style="display: none;">
+              <label for="token">Token:</label>
+              <div class="token-input-wrapper">
+                <input type="text" id="token" name="token" placeholder="Select token or enter address" list="token-list">
+                <datalist id="token-list"></datalist>
+              </div>
+            </div>
+            
+            <div id="token-id-field" style="display: none;">
+              <label for="tokenId">Token ID:</label>
+              <input type="text" id="tokenId" name="tokenId" placeholder="1234">
+            </div>
+            
+            <div id="nft-contract-field" style="display: none;">
+              <label for="nftContract">NFT Contract:</label>
+              <div class="token-input-wrapper">
+                <input type="text" id="nftContract" name="nftContract" placeholder="Select NFT or enter address" list="nft-list">
+                <datalist id="nft-list"></datalist>
+              </div>
+            </div>
+            
+            <button type="submit">Query</button>
+          </form>
+          
+          <div class="results-container">
+            <h3>Query: <a href="#" id="ens-link" target="_blank"><span id="resolved-name"></span></a></h3>
+            <pre id="results" class="json-view"></pre>
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>© <a href="https://namesys.eth.limo" target="_blank">NameSys.eth</a> (<a href="https://wtfpl.eth.limo" target="_blank">WTFPL.ETH</a>)</p>
+          <div class="footer-links">
+            <a href="https://x.com/namesys_eth" target="_blank">Twitter</a>
+            <a href="https://github.com/namesys-eth/jsonapi.eth" target="_blank">GitHub</a>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
